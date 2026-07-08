@@ -146,16 +146,35 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
       const upper = text.toUpperCase();
 
       // Ignore messages from self unless testing with HI, MENU, TEST, or 1-4
-      const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper);
+      const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper) || upper.startsWith('NAME:');
       if (msg.key.fromMe && !isTestCmd) continue;
 
       const phoneNum = remoteJid.split('@')[0];
       console.log(`🤖 [Bot - ${session.branchName}] Received "${text}" from ${phoneNum}`);
 
-      if (upper === '1' || upper.includes('REPORT')) {
-        await sock.sendMessage(remoteJid, {
-          text: `📄 *YOUR LATEST DIAGNOSTIC REPORT*\n\nTo view and download your verified NABL/ISO vector PDF report instantly, click below to open your secure portal:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Login is automatic with your WhatsApp mobile number._`
-        });
+      if (upper.startsWith('NAME:')) {
+        const searchName = text.slice(5).trim();
+        const found = await searchReportInSupabase(searchName, false);
+        if (found) {
+          await sock.sendMessage(remoteJid, {
+            text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || searchName}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin to download your verified PDF report:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
+          });
+        } else {
+          await sock.sendMessage(remoteJid, {
+            text: `❌ *No Report Found*\nWe could not find any verified lab report matching "${searchName}". Please contact your lab branch reception.`
+          });
+        }
+      } else if (upper === '1' || upper.includes('REPORT')) {
+        const found = await searchReportInSupabase(phoneNum, true);
+        if (found) {
+          await sock.sendMessage(remoteJid, {
+            text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
+          });
+        } else {
+          await sock.sendMessage(remoteJid, {
+            text: `🤖 *We couldn't find a published report linked to phone (+${phoneNum}).*\n\nPlease reply with your full name in this exact format:\n*NAME: Your Full Name*\n_(Example: NAME: Ramesh Kumar)_\nSo we can search our database by name!`
+          });
+        }
       } else if (upper === '2' || upper.includes('INVOICE') || upper.includes('BILL')) {
         await sock.sendMessage(remoteJid, {
           text: `🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`
@@ -243,23 +262,43 @@ app.get('/logs', (req, res) => {
   res.json({ ok: true, logs });
 });
 
-// POST send message
-app.post(['/send-message', '/send'], async (req, res) => {
-  const { phone, message, branchId = 'default', branchName = 'Main Lab' } = req.body || {};
+// Helper to search Supabase reports
+async function searchReportInSupabase(query, isPhone = true) {
+  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://kifdgydghoqqxoxwffep.supabase.co";
+  const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supaUrl || !supaKey) return null;
 
-  if (!phone || !message) {
-    return res.status(400).json({ ok: false, error: 'Both "phone" and "message" fields are required.' });
+  try {
+    let endpoint = isPhone
+      ? `${supaUrl}/rest/v1/reports?status=eq.published&or=(patient_phone.ilike.*${query.slice(-10)}*)&order=created_at.desc&limit=1`
+      : `${supaUrl}/rest/v1/reports?status=eq.published&patient_name=ilike.*${encodeURIComponent(query)}*&order=created_at.desc&limit=1`;
+
+    let res = await fetch(endpoint, {
+      headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
+    });
+    let data = await res.json();
+    return Array.isArray(data) && data.length > 0 ? data[0] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// POST send message or PDF document
+app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
+  const { phone, message, branchId = 'default', branchName = 'Main Lab', pdfBase64, filename, caption } = req.body || {};
+
+  if (!phone) {
+    return res.status(400).json({ ok: false, error: '"phone" field is required.' });
   }
 
   let sess = sessions.get(branchId);
   if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
-    // Fallback to default session if specified branch is offline
     sess = sessions.get('default');
   }
 
   if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
     const err = 'No active WhatsApp session connected for this branch or default lab.';
-    addLog(branchId, branchName, phone, 'FAILED', message, err);
+    addLog(branchId, branchName, phone, 'FAILED', message || caption || 'PDF Document', err);
     return res.status(503).json({ ok: false, error: err });
   }
 
@@ -273,7 +312,16 @@ app.post(['/send-message', '/send'], async (req, res) => {
     const [waCheck] = await sess.sock.onWhatsApp(jid);
     const targetJid = waCheck?.exists ? waCheck.jid : jid;
 
-    await sess.sock.sendMessage(targetJid, { text: message });
+    if (pdfBase64) {
+      await sess.sock.sendMessage(targetJid, {
+        document: Buffer.from(pdfBase64, 'base64'),
+        mimetype: 'application/pdf',
+        fileName: filename || 'Verified_Lab_Report.pdf',
+        caption: caption || message || '📑 Here is your official verified laboratory PDF document.'
+      });
+    } else {
+      await sess.sock.sendMessage(targetJid, { text: message });
+    }
 
     console.log(`✅ [Branch: ${sess.branchName}] Sent message → ${digits}`);
     addLog(branchId, sess.branchName, digits, 'SENT', message);

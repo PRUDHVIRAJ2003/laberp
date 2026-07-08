@@ -34,6 +34,17 @@ export default function InvoicesAndContractsPage() {
   const [activeDropdownInvoice, setActiveDropdownInvoice] = useState<{ id: string; x: number; y: number } | null>(null);
   const [previewInvoice, setPreviewInvoice] = useState<any | null>(null);
 
+  // Standalone Create Invoice Modal States
+  const [showCreateInvoiceModal, setShowCreateInvoiceModal] = useState(false);
+  const [newInvPatientName, setNewInvPatientName] = useState("");
+  const [newInvPatientPhone, setNewInvPatientPhone] = useState("");
+  const [newInvPatientEmail, setNewInvPatientEmail] = useState("");
+  const [newInvTestName, setNewInvTestName] = useState("Complete Diagnostic Panel");
+  const [newInvSpecimen, setNewInvSpecimen] = useState("Whole Blood (EDTA)");
+  const [newInvPrice, setNewInvPrice] = useState("850");
+  const [newInvDiscount, setNewInvDiscount] = useState("0");
+  const [newInvStatus, setNewInvStatus] = useState("paid");
+
   // Branch-Wise Invoice Setup States
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>("default");
@@ -81,13 +92,22 @@ export default function InvoicesAndContractsPage() {
     }
   }
 
-  const loadStoredSettings = () => {
+  const loadStoredSettings = async (targetBranch = selectedBranchId) => {
     try {
+      let storeObj: Record<string, any> = {};
       const stored = localStorage.getItem("lab_erp_invoice_setup_branches");
       if (stored) {
-        const parsed = JSON.parse(stored);
-        setAllBranchConfigs(parsed);
-        applyBranchConfig("default", parsed);
+        storeObj = JSON.parse(stored);
+      }
+      const { data: remoteData } = await supabase.from("branch_configurations").select("*");
+      if (remoteData && remoteData.length > 0) {
+        remoteData.forEach((row) => {
+          storeObj[row.branch_id] = row.config;
+        });
+      }
+      if (Object.keys(storeObj).length > 0) {
+        setAllBranchConfigs(storeObj);
+        applyBranchConfig(targetBranch || "default", storeObj);
       } else {
         const savedUpi = localStorage.getItem("lab_erp_upi_config") || "labincharge@okicici";
         const savedPayee = localStorage.getItem("lab_erp_payee_config") || "Just LAB ERP";
@@ -129,7 +149,7 @@ export default function InvoicesAndContractsPage() {
     applyBranchConfig(bId);
   };
 
-  const saveBranchInvoiceSetup = () => {
+  const saveBranchInvoiceSetup = async () => {
     const updated = {
       ...allBranchConfigs,
       [selectedBranchId]: {
@@ -146,7 +166,19 @@ export default function InvoicesAndContractsPage() {
     };
     setAllBranchConfigs(updated);
     localStorage.setItem("lab_erp_invoice_setup_branches", JSON.stringify(updated));
-    setMessage(`✔ Invoice & UPI configuration saved for ${selectedBranchId === "default" ? "All Branches (Default)" : "selected branch"}!`);
+    localStorage.setItem("justlab_erp_settings_v2", JSON.stringify(updated));
+    localStorage.setItem("lab_erp_upi_config", labInchargeUpi);
+    localStorage.setItem("lab_erp_payee_config", payeeName);
+
+    try {
+      await supabase.from("branch_configurations").upsert({
+        branch_id: selectedBranchId,
+        config: updated[selectedBranchId],
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {}
+
+    setMessage(`✔ Invoice & UPI configuration permanently saved for ${selectedBranchId === "default" ? "All Branches (Default)" : "selected branch"}!`);
     setTimeout(() => setMessage(""), 4000);
   };
 
@@ -242,6 +274,43 @@ export default function InvoicesAndContractsPage() {
     } else {
       setMessage("✅ Billing, Invoice & Contract details successfully updated!");
       setShowEditModal(false);
+      fetchInvoices();
+    }
+  };
+
+  const handleCreateStandaloneInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInvPatientName) return alert("Please enter patient name");
+    setSubmitting(true);
+
+    const invNum = `${invPrefix}${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const repNum = `${repPrefix}${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const { error } = await supabase.from("reports").insert({
+      patient_name: newInvPatientName,
+      patient_phone: newInvPatientPhone,
+      patient_email: newInvPatientEmail,
+      test_name: newInvTestName,
+      specimen_name: newInvSpecimen,
+      standard_price: Number(newInvPrice) || 850,
+      discount_amount: Number(newInvDiscount) || 0,
+      net_amount: Math.max(0, (Number(newInvPrice) || 850) - (Number(newInvDiscount) || 0)),
+      payment_status: newInvStatus,
+      invoice_number: invNum,
+      report_number: repNum,
+      status: "published",
+      branch_id: selectedBranchId !== "default" ? selectedBranchId : null
+    });
+
+    setSubmitting(false);
+    if (error) {
+      alert("Error creating invoice: " + error.message);
+    } else {
+      setMessage("✅ Standalone Invoice created successfully!");
+      setShowCreateInvoiceModal(false);
+      setNewInvPatientName("");
+      setNewInvPatientPhone("");
+      setNewInvPatientEmail("");
       fetchInvoices();
       setTimeout(() => setMessage(""), 5000);
     }
@@ -459,6 +528,56 @@ export default function InvoicesAndContractsPage() {
     }
   };
 
+  const sendStandaloneInvoiceNotify = async (inv: any, mode: "whatsapp" | "email") => {
+    const phone = inv.patient_phone || inv.profiles?.phone_number || inv.profiles?.phone;
+    const email = inv.patient_email || inv.profiles?.email;
+    const patName = inv.patient_name || inv.profiles?.full_name || "Patient";
+    const invNum = inv.invoice_number || `INV-${inv.id?.slice(0, 6).toUpperCase()}`;
+
+    if (mode === "whatsapp" && !phone) {
+      return alert("No WhatsApp phone number found for this patient.");
+    }
+    if (mode === "email" && !email) {
+      return alert("No email found for this patient.");
+    }
+
+    setMessage(`⏳ Sending Standalone Invoice ${invNum} via ${mode.toUpperCase()}...`);
+    try {
+      const endpoint = mode === "whatsapp" ? "/api/admin/report-action" : "/api/admin/report-action";
+      await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: mode === "whatsapp" ? "notify_whatsapp" : "notify_email",
+          reportId: inv.id,
+          patient_phone: phone,
+          patient_email: email,
+          patient_name: patName,
+          report_number: invNum,
+          test_name: inv.test_name || inv.tests?.name || "Diagnostic Service",
+          branch_id: inv.branch_id || selectedBranchId
+        })
+      });
+      setMessage(`✅ Standalone Invoice ${invNum} successfully sent to ${mode.toUpperCase()}!`);
+      setTimeout(() => setMessage(""), 5000);
+    } catch (e: any) {
+      alert("Error sending invoice: " + e.message);
+    }
+  };
+
+  const handleDeleteInvoice = async (inv: any) => {
+    if (!confirm(`Are you sure you want to permanently delete invoice ${inv.invoice_number || inv.id}?`)) return;
+    try {
+      const { error } = await supabase.from("reports").delete().eq("id", inv.id);
+      if (error) {
+        alert("Delete error: " + error.message);
+      } else {
+        setMessage(`🗑️ Invoice deleted successfully!`);
+        fetchInvoices();
+      }
+    } catch (e) {}
+  };
+
   const isSuperAdmin = !currentUserProfile || currentUserProfile.role === "super_admin" || currentUserProfile.email === "reports@prudhvirajchalapaka.in" || (!currentUserProfile.branch_id && currentUserProfile.role === "admin");
 
   const filteredReports = reports.filter((r) => {
@@ -530,6 +649,26 @@ export default function InvoicesAndContractsPage() {
             <option value="partial">⏳ Partial Payment</option>
             <option value="waived">🎁 Waived / Contract Free</option>
           </select>
+          <button
+            onClick={() => setShowCreateInvoiceModal(true)}
+            style={{
+              padding: "10px 18px",
+              borderRadius: "12px",
+              border: "none",
+              background: "linear-gradient(135deg, #059669 0%, #10B981 100%)",
+              color: "white",
+              fontWeight: 800,
+              fontSize: "13px",
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}
+          >
+            <span>➕</span>
+            <span>Create New Invoice</span>
+          </button>
         </div>
       </div>
 
@@ -654,7 +793,7 @@ export default function InvoicesAndContractsPage() {
             <button
               onClick={() => {
                 setActiveDropdownInvoice(null);
-                openEditModal(inv);
+                sendStandaloneInvoiceNotify(inv, "whatsapp");
               }}
               style={{
                 width: "100%",
@@ -665,14 +804,37 @@ export default function InvoicesAndContractsPage() {
                 borderRadius: "8px",
                 fontSize: "13px",
                 fontWeight: 800,
-                color: "#4F46E5",
+                color: "#059669",
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
                 cursor: "pointer",
               }}
             >
-              ✏️ Edit Billing & Specimen
+              💬 Send WhatsApp Invoice
+            </button>
+            <button
+              onClick={() => {
+                setActiveDropdownInvoice(null);
+                sendStandaloneInvoiceNotify(inv, "email");
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 800,
+                color: "#0284C7",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                cursor: "pointer",
+              }}
+            >
+              📧 Send Email Invoice
             </button>
             <div style={{ height: "1px", background: "#E2E8F0", margin: "4px 0" }} />
             <button
@@ -696,7 +858,54 @@ export default function InvoicesAndContractsPage() {
                 cursor: "pointer",
               }}
             >
-              🚀 Send Merged Receipt
+              🚀 Send Merged Report + Invoice
+            </button>
+            <div style={{ height: "1px", background: "#E2E8F0", margin: "4px 0" }} />
+            <button
+              onClick={() => {
+                setActiveDropdownInvoice(null);
+                openEditModal(inv);
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 800,
+                color: "#4F46E5",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                cursor: "pointer",
+              }}
+            >
+              ✏️ Edit Billing & Contract
+            </button>
+            <button
+              onClick={() => {
+                setActiveDropdownInvoice(null);
+                handleDeleteInvoice(inv);
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 800,
+                color: "#DC2626",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                cursor: "pointer",
+              }}
+            >
+              🗑️ Delete Invoice
             </button>
           </div>
         );
@@ -985,6 +1194,93 @@ export default function InvoicesAndContractsPage() {
                 <button type="button" onClick={() => setShowEditModal(false)} style={{ padding: "12px 24px", borderRadius: "12px", background: "#F1F5F9", color: "#475569", fontWeight: 800, border: "none", cursor: "pointer", fontSize: "14px" }}>Cancel</button>
                 <button type="submit" disabled={submitting} style={{ padding: "12px 28px", borderRadius: "12px", background: "linear-gradient(135deg, #059669 0%, #10B981 100%)", color: "white", fontWeight: 800, border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)", fontSize: "14px" }}>
                   {submitting ? "Saving..." : "💾 Save Billing & Specimen"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Standalone Create Invoice Modal */}
+      {showCreateInvoiceModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(4px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "24px", width: "100%", maxWidth: "600px", padding: "32px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div className="flex justify-between items-center mb-6 pb-4 border-b" style={{ borderColor: "#E2E8F0" }}>
+              <div>
+                <h3 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>➕ Create Standalone Invoice & Receipt</h3>
+                <p style={{ fontSize: "12px", color: "#64748B", margin: "4px 0 0" }}>Generate a direct billing invoice for any patient or walk-in test</p>
+              </div>
+              <button onClick={() => setShowCreateInvoiceModal(false)} style={{ background: "#F1F5F9", border: "none", width: 32, height: 32, borderRadius: "8px", cursor: "pointer", fontWeight: 800 }}>✕</button>
+            </div>
+
+            <form onSubmit={handleCreateStandaloneInvoice} className="space-y-4">
+              <div>
+                <label style={labelStyle}>Patient Full Name *</label>
+                <input required value={newInvPatientName} onChange={(e) => setNewInvPatientName(e.target.value)} placeholder="e.g. Ramesh Kumar" style={inputStyle} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label style={labelStyle}>Patient Phone (WhatsApp)</label>
+                  <input value={newInvPatientPhone} onChange={(e) => setNewInvPatientPhone(e.target.value)} placeholder="e.g. 9876543210" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Patient Email</label>
+                  <input type="email" value={newInvPatientEmail} onChange={(e) => setNewInvPatientEmail(e.target.value)} placeholder="patient@gmail.com" style={inputStyle} />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Test Profile / Diagnostic Service Name</label>
+                <input value={newInvTestName} onChange={(e) => setNewInvTestName(e.target.value)} placeholder="e.g. Complete Blood Count / Full Body Profile" style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Specimen Type</label>
+                <input value={newInvSpecimen} onChange={(e) => setNewInvSpecimen(e.target.value)} placeholder="e.g. Whole Blood (EDTA) / Routine Serum" style={inputStyle} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label style={labelStyle}>Standard Price (INR) *</label>
+                  <input type="number" required value={newInvPrice} onChange={(e) => setNewInvPrice(e.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Discount / Waiver (INR)</label>
+                  <input type="number" value={newInvDiscount} onChange={(e) => setNewInvDiscount(e.target.value)} style={inputStyle} />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Payment Status *</label>
+                <div className="flex gap-3">
+                  {["paid", "unpaid", "waived"].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setNewInvStatus(st)}
+                      style={{
+                        flex: 1,
+                        padding: "12px",
+                        borderRadius: "12px",
+                        border: `2px solid ${newInvStatus === st ? "#059669" : "#E2E8F0"}`,
+                        background: newInvStatus === st ? "#ECFDF5" : "#FFFFFF",
+                        color: newInvStatus === st ? "#059669" : "#64748B",
+                        fontWeight: 800,
+                        fontSize: "13px",
+                        textTransform: "uppercase",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t" style={{ borderColor: "#E2E8F0" }}>
+                <button type="button" onClick={() => setShowCreateInvoiceModal(false)} style={{ padding: "12px 24px", borderRadius: "12px", background: "#F1F5F9", color: "#475569", fontWeight: 800, border: "none", cursor: "pointer", fontSize: "14px" }}>Cancel</button>
+                <button type="submit" disabled={submitting} style={{ padding: "12px 28px", borderRadius: "12px", background: "linear-gradient(135deg, #059669 0%, #10B981 100%)", color: "white", fontWeight: 800, border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)", fontSize: "14px" }}>
+                  {submitting ? "Creating..." : "➕ Create Direct Invoice"}
                 </button>
               </div>
             </form>

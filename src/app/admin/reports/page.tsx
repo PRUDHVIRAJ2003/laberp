@@ -37,6 +37,13 @@ export default function EnterpriseReportsManager() {
   const [message, setMessage] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Quick Generate Invoice from Report States
+  const [showGenerateInvoiceModal, setShowGenerateInvoiceModal] = useState(false);
+  const [reportForInvoice, setReportForInvoice] = useState<any | null>(null);
+  const [invPriceOverride, setInvPriceOverride] = useState("500");
+  const [invDiscountOverride, setInvDiscountOverride] = useState("0");
+  const [invStatusOverride, setInvStatusOverride] = useState("paid");
+
   // Form Fields
   const [reportMode, setReportMode] = useState<"single" | "group">("single");
   const [selectedPatientId, setSelectedPatientId] = useState("");
@@ -364,7 +371,34 @@ export default function EnterpriseReportsManager() {
     } catch (err: any) {
       setErrorMsg(err.message);
     } finally {
-      setSubmitting(false);
+    }
+  };
+
+  const handleGenerateInvoiceFromReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportForInvoice) return;
+    setSubmitting(true);
+    const invNo = reportForInvoice.invoice_number || generateFormattedId("INV");
+    const std = Number(invPriceOverride) || 0;
+    const disc = Number(invDiscountOverride) || 0;
+    const net = Math.max(0, std - disc);
+
+    const { error } = await supabase.from("reports").update({
+      invoice_number: invNo,
+      standard_price: std,
+      discount_amount: disc,
+      net_amount: net,
+      payment_status: invStatusOverride
+    }).eq("id", reportForInvoice.id);
+
+    setSubmitting(false);
+    if (error) {
+      alert("Error generating invoice: " + error.message);
+    } else {
+      setMessage(`✅ Invoice ${invNo} generated successfully with ₹ ${net} INR Net Payable! Check Invoices tab.`);
+      setShowGenerateInvoiceModal(false);
+      fetchInitialData();
+      setTimeout(() => setMessage(""), 5000);
     }
   };
 
@@ -1256,6 +1290,22 @@ export default function EnterpriseReportsManager() {
               onClick={() => {
                 const rep = activeDropdownReport;
                 setActiveDropdownReport(null);
+                setReportForInvoice(rep);
+                setInvPriceOverride(String(rep.standard_price || rep.tests?.price || rep.test_groups?.price || 500));
+                setInvDiscountOverride(String(rep.discount_amount || 0));
+                setInvStatusOverride(rep.payment_status || "paid");
+                setShowGenerateInvoiceModal(true);
+              }}
+              style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", background: "transparent", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", color: "#4F46E5", display: "flex", alignItems: "center", gap: "10px", textAlign: "left" }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "#EEF2FF")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              🧾 Generate Invoice
+            </button>
+            <button
+              onClick={() => {
+                const rep = activeDropdownReport;
+                setActiveDropdownReport(null);
                 handleNotify(rep, "whatsapp");
               }}
               style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", background: "transparent", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", color: "#059669", display: "flex", alignItems: "center", gap: "10px", textAlign: "left" }}
@@ -1687,6 +1737,72 @@ export default function EnterpriseReportsManager() {
                 );
               })()}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Generate Invoice Modal */}
+      {showGenerateInvoiceModal && reportForInvoice && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(4px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "24px", width: "100%", maxWidth: "480px", padding: "28px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+            <div className="flex justify-between items-center mb-4 pb-3 border-b" style={{ borderColor: "#E2E8F0" }}>
+              <div>
+                <h3 style={{ fontSize: "18px", fontWeight: 900, color: "#0F172A", margin: 0 }}>🧾 Generate Tax Invoice & Receipt</h3>
+                <p style={{ fontSize: "12px", color: "#64748B", margin: "2px 0 0" }}>For Patient: {reportForInvoice.profiles?.full_name || "Patient"}</p>
+              </div>
+              <button onClick={() => setShowGenerateInvoiceModal(false)} style={{ background: "#F1F5F9", border: "none", width: 30, height: 30, borderRadius: "8px", cursor: "pointer", fontWeight: 800 }}>✕</button>
+            </div>
+
+            <form onSubmit={handleGenerateInvoiceFromReport} className="space-y-4">
+              <div>
+                <label style={labelStyle}>Standard Test Price (INR) *</label>
+                <input type="number" required value={invPriceOverride} onChange={(e) => setInvPriceOverride(e.target.value)} style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Discount or Waiver Amount (INR)</label>
+                <input type="number" value={invDiscountOverride} onChange={(e) => setInvDiscountOverride(e.target.value)} style={inputStyle} />
+              </div>
+
+              <div style={{ padding: "12px 14px", background: "#ECFDF5", borderRadius: "12px", border: "1px solid #A7F3D0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#065F46" }}>Net Payable Amount:</span>
+                <span style={{ fontSize: "18px", fontWeight: 900, color: "#047857" }}>₹ {Math.max(0, (Number(invPriceOverride) || 0) - (Number(invDiscountOverride) || 0)).toLocaleString("en-IN")} INR</span>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Payment Status *</label>
+                <div className="flex gap-2">
+                  {["paid", "unpaid", "waived"].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setInvStatusOverride(st)}
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "10px",
+                        border: `2px solid ${invStatusOverride === st ? "#059669" : "#E2E8F0"}`,
+                        background: invStatusOverride === st ? "#ECFDF5" : "#FFFFFF",
+                        color: invStatusOverride === st ? "#059669" : "#64748B",
+                        fontWeight: 800,
+                        fontSize: "12px",
+                        textTransform: "uppercase",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t" style={{ borderColor: "#E2E8F0" }}>
+                <button type="button" onClick={() => setShowGenerateInvoiceModal(false)} style={{ padding: "10px 20px", borderRadius: "10px", background: "#F1F5F9", color: "#475569", fontWeight: 800, border: "none", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+                <button type="submit" disabled={submitting} style={{ padding: "10px 24px", borderRadius: "10px", background: "linear-gradient(135deg, #059669 0%, #10B981 100%)", color: "white", fontWeight: 800, border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)", fontSize: "13px" }}>
+                  {submitting ? "Saving..." : "🧾 Save & Generate Invoice"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -37,14 +37,48 @@ export default function SampleTrackerPage() {
     }
   }
 
+  const notifySampleStatusWhatsApp = async (rep: any, statusStr: string) => {
+    const phone = rep?.patient_phone || rep?.profiles?.phone_number || rep?.profiles?.phone;
+    if (!phone) return;
+    const patName = rep?.patient_name || rep?.profiles?.full_name || "Patient";
+    const repNum = rep?.report_number || rep?.id?.slice(0, 8).toUpperCase();
+    const testTitle = rep?.test_name || rep?.tests?.name || "Laboratory Test";
+    const statusMsg =
+      statusStr === "collected"
+        ? `🧪 Hello ${patName},\nYour sample for *${testTitle}* (Ref: ${repNum}) has been *COLLECTED & BARCODED*. It is now entering diagnostic processing.\n– Main Diagnostic Laboratory`
+        : statusStr === "processing"
+        ? `🔬 Hello ${patName},\nYour diagnostic sample (Ref: ${repNum}) for *${testTitle}* is currently *UNDER ANALYSER PROCESSING* in our laboratory.\n– Main Diagnostic Laboratory`
+        : `✅ Hello ${patName},\nYour laboratory test readings (Ref: ${repNum}) for *${testTitle}* have been *COMPLETED* and sent for senior pathologist review.\n– Main Diagnostic Laboratory`;
+
+    try {
+      await fetch("/api/admin/report-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "notify_whatsapp_custom",
+          patient_phone: phone,
+          message: statusMsg
+        })
+      });
+    } catch (e) {
+      console.warn("Could not dispatch WhatsApp status notification", e);
+    }
+  };
+
   const updateSampleStatus = async (repId: string, newStatus: string, additionalProps = {}) => {
     try {
+      const repObj = reports.find((r) => r.id === repId);
       const { error } = await supabase
         .from("reports")
         .update({ sample_status: newStatus, ...additionalProps })
         .eq("id", repId);
       if (error) throw error;
-      setMessage(`✅ Sample status updated to ${newStatus.toUpperCase()} successfully!`);
+
+      if (repObj) {
+        notifySampleStatusWhatsApp(repObj, newStatus);
+      }
+
+      setMessage(`✅ Sample status updated to ${newStatus.toUpperCase()} & WhatsApp alert sent!`);
       setTimeout(() => setMessage(""), 4000);
       loadReports();
     } catch (err: any) {
@@ -91,7 +125,8 @@ export default function SampleTrackerPage() {
         })
         .eq("id", selectedReport.id);
       if (error) throw error;
-      setMessage("✅ Laboratory readings saved & sent to Pathologist for verification!");
+      notifySampleStatusWhatsApp(selectedReport, "completed");
+      setMessage("✅ Laboratory readings saved & WhatsApp status alert sent to patient!");
       setTimeout(() => setMessage(""), 5000);
       setShowResultsModal(false);
       loadReports();
