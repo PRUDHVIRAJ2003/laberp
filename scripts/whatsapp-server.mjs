@@ -75,6 +75,11 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
     printQRInTerminal: false,
     auth: state,
     syncFullHistory: false,
+    browser: ['Just LAB ERP', 'Chrome', '124.0.0.0'],
+    keepAliveIntervalMs: 25000,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    retryRequestDelayMs: 2000,
   });
 
   session.sock = sock;
@@ -109,19 +114,14 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
         if (fs.existsSync(authDir)) {
           try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (e) {}
         }
-        // Auto restart once after clearing stale creds to generate fresh QR
         setTimeout(() => connectBranch(branchId, session.branchName), 1500);
         return;
       }
 
-      if (session.retryCount < MAX_RETRIES) {
-        session.retryCount++;
-        const delay = Math.min(session.retryCount * 2000, 10000);
-        console.log(`⟳ [Branch: ${session.branchName}] Reconnecting in ${delay/1000}s...`);
-        setTimeout(() => connectBranch(branchId, session.branchName), delay);
-      } else {
-        console.log(`\n❌ [Branch: ${session.branchName}] Max reconnections reached.`);
-      }
+      // Automatically reconnect persistently without permanent lockouts
+      const delay = 3000;
+      console.log(`⟳ [Branch: ${session.branchName}] Connection dropped (${statusCode}). Reconnecting in ${delay/1000}s...`);
+      setTimeout(() => connectBranch(branchId, session.branchName), delay);
     }
   });
 
@@ -295,6 +295,14 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
   if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
     sess = sessions.get('default');
   }
+  if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
+    for (const s of sessions.values()) {
+      if (s.status === 'CONNECTED' && s.sock) {
+        sess = s;
+        break;
+      }
+    }
+  }
 
   if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
     const err = 'No active WhatsApp session connected for this branch or default lab.';
@@ -309,18 +317,40 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
     }
 
     const jid = `${digits}@s.whatsapp.net`;
-    const [waCheck] = await sess.sock.onWhatsApp(jid);
-    const targetJid = waCheck?.exists ? waCheck.jid : jid;
+    let targetJid = jid;
+    try {
+      const waChecks = await sess.sock.onWhatsApp(jid);
+      if (Array.isArray(waChecks) && waChecks[0]?.exists) {
+        targetJid = waChecks[0].jid;
+      }
+    } catch (checkErr) {
+      // Keep direct jid if WhatsApp check times out or drops IQ
+    }
 
-    if (pdfBase64) {
-      await sess.sock.sendMessage(targetJid, {
-        document: Buffer.from(pdfBase64, 'base64'),
-        mimetype: 'application/pdf',
-        fileName: filename || 'Verified_Lab_Report.pdf',
-        caption: caption || message || '📑 Here is your official verified laboratory PDF document.'
-      });
-    } else {
-      await sess.sock.sendMessage(targetJid, { text: message });
+    try {
+      if (pdfBase64) {
+        await sess.sock.sendMessage(targetJid, {
+          document: Buffer.from(pdfBase64, 'base64'),
+          mimetype: 'application/pdf',
+          fileName: filename || 'Verified_Lab_Report.pdf',
+          caption: caption || message || '📑 Here is your official verified laboratory PDF document.'
+        });
+      } else {
+        await sess.sock.sendMessage(targetJid, { text: message });
+      }
+    } catch (firstSendErr) {
+      console.warn(`⚠️ First send attempt failed (${firstSendErr.message}). Retrying in 1.5s...`);
+      await new Promise(r => setTimeout(r, 1500));
+      if (pdfBase64) {
+        await sess.sock.sendMessage(targetJid, {
+          document: Buffer.from(pdfBase64, 'base64'),
+          mimetype: 'application/pdf',
+          fileName: filename || 'Verified_Lab_Report.pdf',
+          caption: caption || message || '📑 Here is your official verified laboratory PDF document.'
+        });
+      } else {
+        await sess.sock.sendMessage(targetJid, { text: message });
+      }
     }
 
     console.log(`✅ [Branch: ${sess.branchName}] Sent message → ${digits}`);

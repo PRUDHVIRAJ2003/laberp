@@ -383,13 +383,27 @@ export default function EnterpriseReportsManager() {
     const disc = Number(invDiscountOverride) || 0;
     const net = Math.max(0, std - disc);
 
-    const { error } = await supabase.from("reports").update({
+    const fullNotes = [
+      reportForInvoice.notes,
+      `[INVOICE GENERATED] INV: ${invNo} | Std: ₹${std} | Disc: ₹${disc} | Net: ₹${net} | Status: ${invStatusOverride}`
+    ].filter(Boolean).join("\n");
+
+    let { error } = await supabase.from("reports").update({
       invoice_number: invNo,
       standard_price: std,
       discount_amount: disc,
       net_amount: net,
-      payment_status: invStatusOverride
+      payment_status: invStatusOverride,
+      notes: fullNotes
     }).eq("id", reportForInvoice.id);
+
+    if (error && (error.message?.includes("column") || error.message?.includes("schema cache"))) {
+      const res2 = await supabase.from("reports").update({
+        invoice_number: invNo,
+        notes: fullNotes
+      }).eq("id", reportForInvoice.id);
+      error = res2.error;
+    }
 
     setSubmitting(false);
     if (error) {
@@ -1296,11 +1310,25 @@ export default function EnterpriseReportsManager() {
                 setInvStatusOverride(rep.payment_status || "paid");
                 setShowGenerateInvoiceModal(true);
               }}
-              style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", background: "transparent", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", color: "#4F46E5", display: "flex", alignItems: "center", gap: "10px", textAlign: "left" }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "#EEF2FF")}
-              onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+              style={{
+                width: "100%",
+                padding: "11px 14px",
+                borderRadius: "10px",
+                background: activeDropdownReport?.invoice_number ? "#ECFDF5" : "transparent",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 800,
+                fontSize: "13px",
+                color: activeDropdownReport?.invoice_number ? "#059669" : "#4F46E5",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                textAlign: "left"
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.background = activeDropdownReport?.invoice_number ? "#D1FAE5" : "#EEF2FF")}
+              onMouseOut={(e) => (e.currentTarget.style.background = activeDropdownReport?.invoice_number ? "#ECFDF5" : "transparent")}
             >
-              🧾 Generate Invoice
+              {activeDropdownReport?.invoice_number ? `✅ Invoice Active (${activeDropdownReport.invoice_number})` : "🧾 Generate Invoice"}
             </button>
             <button
               onClick={() => {

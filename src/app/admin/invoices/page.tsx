@@ -814,7 +814,242 @@ export default function InvoicesAndContractsPage() {
         </div>
       )}
 
-      {/* Invoices List Table */}
+      {/* TAB 1: INVOICES & BILLING RECEIPTS LIST TABLE */}
+      {activeTab === "list" && (
+        <div>
+          {loading ? (
+            <div style={{ padding: "60px", textAlign: "center", background: "white", borderRadius: "20px", border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "28px", marginBottom: "12px" }}>⏳</div>
+              <div style={{ fontSize: "16px", fontWeight: 800, color: "#334155" }}>Loading Invoices & Billing Receipts...</div>
+            </div>
+          ) : filteredReports.length === 0 ? (
+            <div style={{ padding: "80px 20px", textAlign: "center", background: "white", borderRadius: "20px", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.02)" }}>
+              <div style={{ fontSize: "48px", marginBottom: "16px" }}>🧾</div>
+              <h3 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>No Invoices Found</h3>
+              <p style={{ fontSize: "14px", color: "#64748B", margin: "0 0 24px", maxWidth: "420px", display: "inline-block" }}>
+                Click "Create New Invoice" above or generate an invoice directly from any clinical report to start tracking patient billing.
+              </p>
+              <div>
+                <button
+                  onClick={() => setShowCreateInvoiceModal(true)}
+                  style={{ padding: "12px 24px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #059669 0%, #10B981 100%)", color: "white", fontWeight: 800, fontSize: "14px", cursor: "pointer", boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)" }}
+                >
+                  ➕ Create New Invoice
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ background: "white", borderRadius: "20px", border: "1px solid #E2E8F0", overflow: "hidden", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.04)" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                    <th style={{ padding: "16px 20px", fontSize: "11px", fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>Invoice # & Date</th>
+                    <th style={{ padding: "16px 20px", fontSize: "11px", fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>Patient Details</th>
+                    <th style={{ padding: "16px 20px", fontSize: "11px", fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>Diagnostic Service & Specimen</th>
+                    <th style={{ padding: "16px 20px", fontSize: "11px", fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>Financial Breakdown</th>
+                    <th style={{ padding: "16px 20px", fontSize: "11px", fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>Payment Status</th>
+                    <th style={{ padding: "16px 20px", fontSize: "11px", fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "right" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredReports.map((r) => {
+                    const invNum = r.invoice_number || r.report_number || `INV-${r.id?.slice(0, 6)?.toUpperCase()}`;
+                    const patName = getPatientName(r);
+                    const patPhone = getPatientPhone(r);
+                    const patEmail = getPatientEmail(r);
+                    const testTitle = getTestName(r);
+                    const std = Number(r.standard_price || r.tests?.price || r.test_groups?.price || 850);
+                    const disc = Number(r.discount_amount || 0);
+                    const net = r.net_amount !== undefined && r.net_amount !== null ? Number(r.net_amount) : Math.max(0, std - disc);
+                    const st = (r.payment_status || "paid").toLowerCase();
+
+                    return (
+                      <tr key={r.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }} className="hover:bg-slate-50">
+                        <td style={{ padding: "16px 20px" }}>
+                          <div style={{ fontWeight: 900, color: "#0F172A", fontSize: "14px" }}>{invNum}</div>
+                          <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 600, marginTop: "2px" }}>
+                            {new Date(r.created_at || Date.now()).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: "16px 20px" }}>
+                          <div style={{ fontWeight: 800, color: "#1E293B", fontSize: "14px" }}>{patName}</div>
+                          {patPhone && <div style={{ fontSize: "12px", color: "#059669", fontWeight: 700 }}>📱 {patPhone}</div>}
+                          {patEmail && <div style={{ fontSize: "11px", color: "#64748B" }}>✉️ {patEmail}</div>}
+                        </td>
+
+                        <td style={{ padding: "16px 20px" }}>
+                          <div style={{ fontWeight: 800, color: "#1E293B", fontSize: "13px" }}>{testTitle}</div>
+                          <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>
+                            🧪 {r.specimen_name || "Whole Blood (EDTA)"} • {r.sample_type || "Walk-in"}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: "16px 20px" }}>
+                          <div style={{ fontSize: "12px", color: "#64748B" }}>Std: ₹{std.toLocaleString("en-IN")}</div>
+                          {disc > 0 && <div style={{ fontSize: "12px", color: "#DC2626", fontWeight: 700 }}>Disc: -₹{disc.toLocaleString("en-IN")}</div>}
+                          <div style={{ fontSize: "15px", fontWeight: 900, color: "#059669", marginTop: "2px" }}>
+                            Net: ₹{net.toLocaleString("en-IN")}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: "16px 20px" }}>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "6px 12px",
+                              borderRadius: "20px",
+                              fontSize: "11px",
+                              fontWeight: 900,
+                              textTransform: "uppercase",
+                              background:
+                                st === "paid"
+                                  ? "#ECFDF5"
+                                  : st === "waived"
+                                  ? "#EEF2FF"
+                                  : st === "partial"
+                                  ? "#EFF6FF"
+                                  : "#FEF2F2",
+                              color:
+                                st === "paid"
+                                  ? "#059669"
+                                  : st === "waived"
+                                  ? "#4F46E5"
+                                  : st === "partial"
+                                  ? "#2563EB"
+                                  : "#DC2626",
+                              border: `1px solid ${
+                                st === "paid"
+                                  ? "#A7F3D0"
+                                  : st === "waived"
+                                  ? "#C7D2FE"
+                                  : st === "partial"
+                                  ? "#BFDBFE"
+                                  : "#FECACA"
+                              }`,
+                            }}
+                          >
+                            {st}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: "16px 20px", textAlign: "right" }}>
+                          <div className="flex justify-end items-center gap-2">
+                            <button
+                              onClick={() => setPreviewInvoice(r)}
+                              style={{ padding: "8px 12px", borderRadius: "10px", background: "#F8FAFC", border: "1px solid #CBD5E1", color: "#334155", fontWeight: 800, fontSize: "12px", cursor: "pointer" }}
+                              title="Preview Official Tax Invoice"
+                            >
+                              👁️ Preview
+                            </button>
+                            <button
+                              onClick={() => downloadInvoicePdf(r)}
+                              style={{ padding: "8px 12px", borderRadius: "10px", background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#059669", fontWeight: 800, fontSize: "12px", cursor: "pointer" }}
+                              title="Download PDF"
+                            >
+                              📄 PDF
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setActiveDropdownInvoice({ id: r.id, x: Math.max(10, rect.right - 220), y: rect.bottom + 6 });
+                              }}
+                              style={{ padding: "8px 12px", borderRadius: "10px", background: "#F1F5F9", border: "1px solid #CBD5E1", color: "#1E293B", fontWeight: 800, fontSize: "12px", cursor: "pointer" }}
+                            >
+                              ⋮ More
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: BRANCH-WISE INVOICE SETUP & CONFIGURATION PANEL */}
+      {activeTab === "settings" && (
+        <div style={{ background: "white", borderRadius: "24px", border: "1px solid #E2E8F0", padding: "32px", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.04)" }}>
+          <div className="flex justify-between items-center mb-6 pb-4 border-b" style={{ borderColor: "#E2E8F0" }}>
+            <div>
+              <h3 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>⚙️ Branch-Wise Invoice & UPI Configuration</h3>
+              <p style={{ fontSize: "13px", color: "#64748B", margin: "4px 0 0", fontWeight: 600 }}>Configure branding, UPI payment ID, digital signature & tax disclaimers for receipts</p>
+            </div>
+            <div>
+              <select
+                value={selectedBranchId}
+                onChange={(e) => handleBranchSelectChange(e.target.value)}
+                style={{ padding: "10px 16px", borderRadius: "12px", border: "2px solid #4F46E5", fontWeight: 800, fontSize: "13px", color: "#1E293B", background: "white", cursor: "pointer" }}
+              >
+                <option value="default">🌐 All Branches (Global Default)</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>🏥 {b.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label style={labelStyle}>Laboratory / Hospital Name</label>
+                <input value={setupLabName} onChange={(e) => setSetupLabName(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Laboratory Tagline / Subtitle</label>
+                <input value={setupLabTagline} onChange={(e) => setSetupLabTagline(e.target.value)} style={inputStyle} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label style={labelStyle}>UPI Payment ID (For Instant QR Receipt)</label>
+                <input value={labInchargeUpi} onChange={(e) => setLabInchargeUpi(e.target.value)} placeholder="e.g. labincharge@okicici" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Payee Business Name (For UPI QR)</label>
+                <input value={payeeName} onChange={(e) => setPayeeName(e.target.value)} placeholder="e.g. Just LAB ERP" style={inputStyle} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label style={labelStyle}>Authorized Signatory Name</label>
+                <input value={setupSignatoryName} onChange={(e) => setSetupSignatoryName(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Signatory Designation</label>
+                <input value={setupSignatoryDesignation} onChange={(e) => setSetupSignatoryDesignation(e.target.value)} style={inputStyle} />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Official Tax Receipt Disclaimer / Footer Note</label>
+              <textarea
+                value={setupInvoiceNote}
+                onChange={(e) => setSetupInvoiceNote(e.target.value)}
+                rows={3}
+                style={{ ...inputStyle, resize: "vertical" }}
+              />
+            </div>
+
+            <div className="flex justify-end pt-4 border-t" style={{ borderColor: "#E2E8F0" }}>
+              <button
+                onClick={saveBranchInvoiceSetup}
+                style={{ padding: "14px 32px", borderRadius: "14px", background: "linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)", color: "white", fontWeight: 900, fontSize: "14px", border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)" }}
+              >
+                💾 Save Invoice & UPI Configuration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoices List Dropdown */}
       {activeDropdownInvoice && (() => {
         const inv = filteredReports.find((item: any) => item.id === activeDropdownInvoice.id);
         if (!inv) return null;
