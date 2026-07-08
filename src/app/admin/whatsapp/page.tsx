@@ -80,6 +80,7 @@ export default function WhatsAppGatewayPage() {
       if (res.ok) {
         setActionMessage(`✔ QR Code generated for ${branchName}. Please scan below!`);
         fetchGatewayState();
+        [1000, 2500, 4500].forEach((ms) => setTimeout(fetchGatewayState, ms));
       } else {
         setActionMessage(`❌ Failed to start session for ${branchName}`);
       }

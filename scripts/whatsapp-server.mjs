@@ -103,9 +103,14 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
       const loggedOut = statusCode === DisconnectReason.loggedOut;
 
       if (loggedOut) {
-        console.log(`\n❌ [Branch: ${session.branchName}] Logged out.`);
+        console.log(`\n❌ [Branch: ${session.branchName}] Logged out. Clearing stale auth data...`);
         session.qr = null;
         session.phone = null;
+        if (fs.existsSync(authDir)) {
+          try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (e) {}
+        }
+        // Auto restart once after clearing stale creds to generate fresh QR
+        setTimeout(() => connectBranch(branchId, session.branchName), 1500);
         return;
       }
 
@@ -200,6 +205,10 @@ app.get('/sessions', (req, res) => {
 // POST start/refresh a branch session
 app.post('/sessions/start', async (req, res) => {
   const { branchId = 'default', branchName = 'Lab Branch' } = req.body || {};
+  const existing = sessions.get(branchId);
+  if (existing && existing.sock && existing.status !== 'CONNECTED') {
+    try { existing.sock.end(undefined); } catch (e) {}
+  }
   await connectBranch(branchId, branchName);
   res.json({ ok: true, message: `Session initiated for ${branchName}` });
 });
