@@ -131,7 +131,7 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+      if (!msg.message) continue;
       const remoteJid = msg.key.remoteJid;
       if (!remoteJid || remoteJid.includes('@g.us')) continue; // Ignore group chats
 
@@ -143,31 +143,35 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
 
       if (!text) continue;
 
+      const upper = text.toUpperCase();
+
+      // Ignore messages from self unless testing with HI, MENU, TEST, or 1-4
+      const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper);
+      if (msg.key.fromMe && !isTestCmd) continue;
+
       const phoneNum = remoteJid.split('@')[0];
       console.log(`🤖 [Bot - ${session.branchName}] Received "${text}" from ${phoneNum}`);
 
-      const upper = text.toUpperCase();
-
       if (upper === '1' || upper.includes('REPORT')) {
         await sock.sendMessage(remoteJid, {
-          text: `📄 *YOUR LATEST DIAGNOSTIC REPORT*\n\nTo view and download your verified NABL/ISO vector PDF report instantly, click below to open your secure portal:\n🔗 *https://app.justlab.in/patient/dashboard*\n\n_Login is automatic with your WhatsApp mobile number._`
+          text: `📄 *YOUR LATEST DIAGNOSTIC REPORT*\n\nTo view and download your verified NABL/ISO vector PDF report instantly, click below to open your secure portal:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Login is automatic with your WhatsApp mobile number._`
         });
       } else if (upper === '2' || upper.includes('INVOICE') || upper.includes('BILL')) {
         await sock.sendMessage(remoteJid, {
-          text: `🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://app.justlab.in/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`
+          text: `🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`
         });
       } else if (upper === '3' || upper.includes('BOOK') || upper.includes('APPOINTMENT')) {
         await sock.sendMessage(remoteJid, {
-          text: `📅 *BOOK A TEST / HOME SAMPLE COLLECTION*\n\nBook blood tests, full body checkups, or home sample pickup in 30 seconds:\n🔗 *https://app.justlab.in/patient/dashboard*\n\nChoose your preferred date, time slot, and nearest lab branch!`
+          text: `📅 *BOOK A TEST / HOME SAMPLE COLLECTION*\n\nBook blood tests, full body checkups, or home sample pickup in 30 seconds:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\nChoose your preferred date, time slot, and nearest lab branch!`
         });
       } else if (upper === '4' || upper.includes('ADDRESS') || upper.includes('LOCATION')) {
         await sock.sendMessage(remoteJid, {
-          text: `📍 *LAB BRANCH & CONTACT DETAILS*\n\n*Branch:* ${session.branchName}\n*Headquarters:* Medical District Sector 5, India\n*Helpline:* +91 98765 43210\n*Email:* help@justlab.in\n\nWe are open Monday to Saturday (07:00 AM - 09:00 PM).`
+          text: `📍 *LAB BRANCH & CONTACT DETAILS*\n\n*Branch:* ${session.branchName}\n*Headquarters:* Medical District Sector 5, India\n*Helpline:* +91 98765 43210\n*Email:* help@laberp.vercel.app\n\nWe are open Monday to Saturday (07:00 AM - 09:00 PM).`
         });
       } else {
         // Default Interactive Menu
         await sock.sendMessage(remoteJid, {
-          text: `🏥 *JUST LAB DIAGNOSTIC & RESEARCH CENTER*\n_Automated 24/7 Patient Assistant_\n\nHello! How can we assist you today?\n\nReply with a number:\n*1️⃣* Download Latest Test Report (PDF)\n*2️⃣* Check Invoices & Payment Status\n*3️⃣* Book Home Sample Collection / Lab Visit\n*4️⃣* Lab Location & Helpline Contact\n\n_Reply 1, 2, 3, or 4 at any time._`
+          text: `🏥 *LAB ERP DIAGNOSTIC & RESEARCH CENTER*\n_Automated 24/7 Patient Assistant_\n\nHello! How can we assist you today?\n\nReply with a number:\n*1️⃣* Download Latest Test Report (PDF)\n*2️⃣* Check Invoices & Payment Status\n*3️⃣* Book Home Sample Collection / Lab Visit\n*4️⃣* Lab Location & Helpline Contact\n\n_Reply 1, 2, 3, or 4 at any time._`
         });
       }
     }

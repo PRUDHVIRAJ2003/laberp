@@ -400,12 +400,13 @@ export async function POST(req: NextRequest) {
       return Buffer.from(arrayBuffer);
     };
 
-    // Helper: Dispatch WhatsApp message via local Baileys gateway on port 3005
+    // Helper: Dispatch WhatsApp message via live Render gateway
     const sendWhatsAppAlert = async (phone: string, text: string) => {
       try {
         if (!phone) return false;
         const phoneToUse = phone.includes("@") ? "+919876543210" : phone;
-        await fetch("http://127.0.0.1:3005/send", {
+        const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
+        const res = await fetch(`${baseUrl}/send-message`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -415,7 +416,7 @@ export async function POST(req: NextRequest) {
             branchName: body.branch_name || "Main Diagnostic Hub"
           }),
         });
-        return true;
+        return res.ok;
       } catch (e) {
         console.warn("WhatsApp Server dispatch warning:", e);
         return false;
