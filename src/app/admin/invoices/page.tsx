@@ -35,15 +35,41 @@ export default function InvoicesAndContractsPage() {
   const [previewInvoice, setPreviewInvoice] = useState<any | null>(null);
 
   // Standalone Create Invoice Modal States
+  // Standalone Create Invoice Modal States (Complete Enterprise Fields)
   const [showCreateInvoiceModal, setShowCreateInvoiceModal] = useState(false);
   const [newInvPatientName, setNewInvPatientName] = useState("");
   const [newInvPatientPhone, setNewInvPatientPhone] = useState("");
   const [newInvPatientEmail, setNewInvPatientEmail] = useState("");
+  const [newInvPatientAge, setNewInvPatientAge] = useState("");
+  const [newInvPatientGender, setNewInvPatientGender] = useState("Male");
+  const [newInvPatientAddress, setNewInvPatientAddress] = useState("");
   const [newInvTestName, setNewInvTestName] = useState("Complete Diagnostic Panel");
   const [newInvSpecimen, setNewInvSpecimen] = useState("Whole Blood (EDTA)");
+  const [newInvCollectionMode, setNewInvCollectionMode] = useState("Lab Walk-in");
+  const [newInvDoctor, setNewInvDoctor] = useState("Self / General");
+  const [newInvContractName, setNewInvContractName] = useState("Standard Patient Rate");
   const [newInvPrice, setNewInvPrice] = useState("850");
   const [newInvDiscount, setNewInvDiscount] = useState("0");
+  const [newInvAdditionalCharge, setNewInvAdditionalCharge] = useState("0");
   const [newInvStatus, setNewInvStatus] = useState("paid");
+  const [newInvPaymentMode, setNewInvPaymentMode] = useState("UPI / Instant QR");
+  const [newInvNotes, setNewInvNotes] = useState("");
+
+  const getPatientName = (r: any) => {
+    return r?.patient_name || r?.beneficiary_name || r?.profiles?.full_name || `${r?.profiles?.first_name || ""} ${r?.profiles?.last_name || ""}`.trim() || (r?.notes?.match(/Patient:\s*([^|]+)/i)?.[1]?.trim()) || "Walk-in Patient";
+  };
+
+  const getPatientPhone = (r: any) => {
+    return r?.patient_phone || r?.profiles?.phone_number || r?.profiles?.phone || (r?.notes?.match(/Phone:\s*([0-9+-\s]+)/i)?.[1]?.trim()) || "";
+  };
+
+  const getPatientEmail = (r: any) => {
+    return r?.patient_email || r?.profiles?.email || (r?.notes?.match(/Email:\s*([^\s|]+)/i)?.[1]?.trim()) || "";
+  };
+
+  const getTestName = (r: any) => {
+    return r?.test_name || r?.tests?.name || r?.test_groups?.name || (r?.notes?.match(/Test:\s*([^|]+)/i)?.[1]?.trim()) || "Diagnostic Profile";
+  };
 
   // Branch-Wise Invoice Setup States
   const [branches, setBranches] = useState<any[]>([]);
@@ -285,32 +311,78 @@ export default function InvoicesAndContractsPage() {
 
     const invNum = `${invPrefix}${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const repNum = `${repPrefix}${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const std = Number(newInvPrice) || 850;
+    const disc = Number(newInvDiscount) || 0;
+    const add = Number(newInvAdditionalCharge) || 0;
+    const net = Math.max(0, std - disc + add);
 
-    const { error } = await supabase.from("reports").insert({
+    const fullNotes = [
+      newInvNotes,
+      `Patient: ${newInvPatientName} | Phone: ${newInvPatientPhone || "N/A"} | Email: ${newInvPatientEmail || "N/A"} | Age/Gender: ${newInvPatientAge || "N/A"}/${newInvPatientGender || "N/A"}`,
+      `Test: ${newInvTestName} | Collection: ${newInvCollectionMode} | Doctor: ${newInvDoctor}`,
+      `Payment Mode: ${newInvPaymentMode}`
+    ].filter(Boolean).join("\n");
+
+    const primaryPayload = {
       patient_name: newInvPatientName,
       patient_phone: newInvPatientPhone,
       patient_email: newInvPatientEmail,
+      patient_age: newInvPatientAge,
+      patient_gender: newInvPatientGender,
       test_name: newInvTestName,
-      specimen_name: newInvSpecimen,
-      standard_price: Number(newInvPrice) || 850,
-      discount_amount: Number(newInvDiscount) || 0,
-      net_amount: Math.max(0, (Number(newInvPrice) || 850) - (Number(newInvDiscount) || 0)),
-      payment_status: newInvStatus,
+      specimen_name: newInvSpecimen || "Whole Blood (EDTA)",
+      sample_type: newInvCollectionMode || "Routine Serum",
+      standard_price: std,
+      discount_amount: disc,
+      net_amount: net,
+      contract_name: newInvContractName || "Standard Patient Rate",
+      payment_status: newInvStatus || "paid",
       invoice_number: invNum,
       report_number: repNum,
       status: "published",
+      sample_status: "completed",
+      referring_doctor: newInvDoctor || "Self / General",
+      notes: fullNotes,
+      beneficiary_name: newInvPatientName,
       branch_id: selectedBranchId !== "default" ? selectedBranchId : null
-    });
+    };
+
+    let { error } = await supabase.from("reports").insert(primaryPayload);
+
+    // Fallback if migration_v9 columns (patient_email, patient_name) do not exist in schema cache
+    if (error && (error.message?.includes("column") || error.message?.includes("schema cache"))) {
+      const fallbackPayload = {
+        invoice_number: invNum,
+        report_number: repNum,
+        specimen_name: newInvSpecimen || "Whole Blood (EDTA)",
+        sample_type: newInvCollectionMode || "Routine Serum",
+        standard_price: std,
+        discount_amount: disc,
+        net_amount: net,
+        contract_name: newInvContractName || "Standard Patient Rate",
+        payment_status: newInvStatus || "paid",
+        status: "published",
+        sample_status: "completed",
+        referring_doctor: newInvDoctor || "Self / General",
+        notes: fullNotes,
+        beneficiary_name: newInvPatientName,
+        branch_id: selectedBranchId !== "default" ? selectedBranchId : null
+      };
+      const res2 = await supabase.from("reports").insert(fallbackPayload);
+      error = res2.error;
+    }
 
     setSubmitting(false);
     if (error) {
       alert("Error creating invoice: " + error.message);
     } else {
-      setMessage("✅ Standalone Invoice created successfully!");
+      setMessage(`✅ Standalone Enterprise Invoice ${invNum} created successfully!`);
       setShowCreateInvoiceModal(false);
       setNewInvPatientName("");
       setNewInvPatientPhone("");
       setNewInvPatientEmail("");
+      setNewInvPatientAge("");
+      setNewInvNotes("");
       fetchInvoices();
       setTimeout(() => setMessage(""), 5000);
     }
@@ -584,7 +656,7 @@ export default function InvoicesAndContractsPage() {
     if (!isSuperAdmin && currentUserProfile?.branch_id && r.branch_id !== currentUserProfile.branch_id) {
       return false;
     }
-    const name = r.profiles?.full_name || `${r.profiles?.first_name || ""} ${r.profiles?.last_name || ""}`.trim() || "";
+    const name = getPatientName(r);
     const inv = r.invoice_number || r.report_number || "";
     const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) || inv.toLowerCase().includes(searchTerm.toLowerCase());
     if (filterStatus === "all") return matchesSearch;
@@ -649,6 +721,25 @@ export default function InvoicesAndContractsPage() {
             <option value="partial">⏳ Partial Payment</option>
             <option value="waived">🎁 Waived / Contract Free</option>
           </select>
+          <button
+            onClick={() => fetchInvoices()}
+            style={{
+              padding: "10px 14px",
+              borderRadius: "12px",
+              border: "1px solid #CBD5E1",
+              background: "white",
+              color: "#334155",
+              fontWeight: 800,
+              fontSize: "13px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}
+            title="Refresh Invoices List"
+          >
+            <span>🔄</span>
+          </button>
           <button
             onClick={() => setShowCreateInvoiceModal(true)}
             style={{
@@ -1201,86 +1292,184 @@ export default function InvoicesAndContractsPage() {
         </div>
       )}
 
-      {/* Standalone Create Invoice Modal */}
+      {/* Enterprise Standalone Create Invoice Modal */}
       {showCreateInvoiceModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(4px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-          <div style={{ background: "white", borderRadius: "24px", width: "100%", maxWidth: "600px", padding: "32px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(6px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "24px", width: "100%", maxWidth: "760px", padding: "32px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.35)", maxHeight: "92vh", overflowY: "auto", border: "1px solid #E2E8F0" }}>
             <div className="flex justify-between items-center mb-6 pb-4 border-b" style={{ borderColor: "#E2E8F0" }}>
-              <div>
-                <h3 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>➕ Create Standalone Invoice & Receipt</h3>
-                <p style={{ fontSize: "12px", color: "#64748B", margin: "4px 0 0" }}>Generate a direct billing invoice for any patient or walk-in test</p>
+              <div className="flex items-center gap-3">
+                <div style={{ width: 44, height: 44, borderRadius: "12px", background: "#ECFDF5", color: "#059669", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px" }}>🧾</div>
+                <div>
+                  <h3 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>Create Direct Clinical Invoice & Receipt</h3>
+                  <p style={{ fontSize: "12px", color: "#64748B", margin: "4px 0 0", fontWeight: 600 }}>Generate comprehensive hospital tax receipts with corporate agreements & instant UPI</p>
+                </div>
               </div>
-              <button onClick={() => setShowCreateInvoiceModal(false)} style={{ background: "#F1F5F9", border: "none", width: 32, height: 32, borderRadius: "8px", cursor: "pointer", fontWeight: 800 }}>✕</button>
+              <button onClick={() => setShowCreateInvoiceModal(false)} style={{ background: "#F1F5F9", border: "none", width: 34, height: 34, borderRadius: "50%", cursor: "pointer", fontWeight: 800, fontSize: "16px", color: "#64748B" }}>✕</button>
             </div>
 
-            <form onSubmit={handleCreateStandaloneInvoice} className="space-y-4">
-              <div>
-                <label style={labelStyle}>Patient Full Name *</label>
-                <input required value={newInvPatientName} onChange={(e) => setNewInvPatientName(e.target.value)} placeholder="e.g. Ramesh Kumar" style={inputStyle} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label style={labelStyle}>Patient Phone (WhatsApp)</label>
-                  <input value={newInvPatientPhone} onChange={(e) => setNewInvPatientPhone(e.target.value)} placeholder="e.g. 9876543210" style={inputStyle} />
+            <form onSubmit={handleCreateStandaloneInvoice} className="space-y-6">
+              {/* SECTION 1: PATIENT DEMOGRAPHICS */}
+              <div style={{ background: "#F8FAFC", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#334155", textTransform: "uppercase", marginBottom: "14px", letterSpacing: "0.5px" }}>👤 Patient Demographics & Contact</div>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="col-span-2">
+                    <label style={labelStyle}>Patient Full Name *</label>
+                    <input required value={newInvPatientName} onChange={(e) => setNewInvPatientName(e.target.value)} placeholder="e.g. Ramesh Kumar" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Age & Gender</label>
+                    <div className="flex gap-2">
+                      <input value={newInvPatientAge} onChange={(e) => setNewInvPatientAge(e.target.value)} placeholder="35 Yrs" style={{ ...inputStyle, width: "85px" }} />
+                      <select value={newInvPatientGender} onChange={(e) => setNewInvPatientGender(e.target.value)} style={{ ...inputStyle, padding: "10px 8px" }}>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label style={labelStyle}>WhatsApp Phone Number *</label>
+                    <input required value={newInvPatientPhone} onChange={(e) => setNewInvPatientPhone(e.target.value)} placeholder="e.g. +91 98765 43210" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Patient Email Address</label>
+                    <input type="email" value={newInvPatientEmail} onChange={(e) => setNewInvPatientEmail(e.target.value)} placeholder="patient@gmail.com" style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: CLINICAL SERVICES & SPECIMEN */}
+              <div style={{ background: "#F8FAFC", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#334155", textTransform: "uppercase", marginBottom: "14px", letterSpacing: "0.5px" }}>🔬 Diagnostic Service & Collection</div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label style={labelStyle}>Diagnostic Profile / Test Name *</label>
+                    <input required value={newInvTestName} onChange={(e) => setNewInvTestName(e.target.value)} placeholder="e.g. Complete Blood Count / Full Body Checkup" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Specimen Type</label>
+                    <input value={newInvSpecimen} onChange={(e) => setNewInvSpecimen(e.target.value)} placeholder="e.g. Whole Blood (EDTA) / Serum" style={inputStyle} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label style={labelStyle}>Collection Mode</label>
+                    <select value={newInvCollectionMode} onChange={(e) => setNewInvCollectionMode(e.target.value)} style={inputStyle}>
+                      <option value="Lab Walk-in">Lab Walk-in Center</option>
+                      <option value="Home Collection / Phlebotomist">Home Collection / Phlebotomist</option>
+                      <option value="Hospital In-patient">Hospital In-patient Ward</option>
+                      <option value="Emergency Priority Sample">Emergency Priority Sample</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Referring Physician / Clinic</label>
+                    <input value={newInvDoctor} onChange={(e) => setNewInvDoctor(e.target.value)} placeholder="e.g. Dr. Rajesh Sharma / Self" style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: RATE CONTRACT, PRICING & DISCOUNTS */}
+              <div style={{ background: "#F0FDF4", padding: "20px", borderRadius: "16px", border: "1px solid #BBF7D0" }}>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#166534", textTransform: "uppercase", marginBottom: "14px", letterSpacing: "0.5px" }}>💰 Pricing, Corporate Agreement & Calculation</div>
+                <div className="mb-4">
+                  <label style={labelStyle}>Rate Contract / Corporate Agreement Scheme</label>
+                  <select value={newInvContractName} onChange={(e) => setNewInvContractName(e.target.value)} style={{ ...inputStyle, background: "white" }}>
+                    <option value="Standard Patient Rate">Standard Patient Rate (Retail)</option>
+                    <option value="Corporate Partner Agreement (10% Off)">Corporate Partner Agreement (10% Off)</option>
+                    <option value="Hospital B2B Referral Contract">Hospital B2B Referral Contract</option>
+                    <option value="Insurance Health Panel Agreement">Insurance Health Panel Agreement</option>
+                    <option value="Senior Citizen Special Rate">Senior Citizen Special Rate</option>
+                    <option value="CGHS / ECHS Government Scheme">CGHS / ECHS Government Scheme</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-4 gap-3 items-center">
+                  <div>
+                    <label style={labelStyle}>Standard Price (₹)</label>
+                    <input type="number" required value={newInvPrice} onChange={(e) => setNewInvPrice(e.target.value)} style={{ ...inputStyle, background: "white", fontWeight: 700 }} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Discount (₹)</label>
+                    <input type="number" value={newInvDiscount} onChange={(e) => setNewInvDiscount(e.target.value)} style={{ ...inputStyle, background: "white", color: "#DC2626", fontWeight: 700 }} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Home Collect (₹)</label>
+                    <input type="number" value={newInvAdditionalCharge} onChange={(e) => setNewInvAdditionalCharge(e.target.value)} style={{ ...inputStyle, background: "white", fontWeight: 700 }} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Net Payable Amount</label>
+                    <div style={{ padding: "10px 14px", borderRadius: "10px", background: "#15803D", color: "white", fontWeight: 900, fontSize: "16px", textAlign: "center" }}>
+                      ₹ {Math.max(0, (Number(newInvPrice) || 0) - (Number(newInvDiscount) || 0) + (Number(newInvAdditionalCharge) || 0)).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: PAYMENT STATUS & SETTLEMENT MODE */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label style={labelStyle}>Patient Email</label>
-                  <input type="email" value={newInvPatientEmail} onChange={(e) => setNewInvPatientEmail(e.target.value)} placeholder="patient@gmail.com" style={inputStyle} />
+                  <label style={labelStyle}>Payment Status *</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["paid", "unpaid", "partial", "waived"].map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setNewInvStatus(st)}
+                        style={{
+                          padding: "10px",
+                          borderRadius: "10px",
+                          border: `2px solid ${newInvStatus === st ? "#059669" : "#E2E8F0"}`,
+                          background: newInvStatus === st ? "#ECFDF5" : "#FFFFFF",
+                          color: newInvStatus === st ? "#059669" : "#64748B",
+                          fontWeight: 800,
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          cursor: "pointer"
+                        }}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Payment Settlement Mode *</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["UPI / Instant QR", "Cash", "Card / POS", "Corporate Credit"].map((pm) => (
+                      <button
+                        key={pm}
+                        type="button"
+                        onClick={() => setNewInvPaymentMode(pm)}
+                        style={{
+                          padding: "10px",
+                          borderRadius: "10px",
+                          border: `2px solid ${newInvPaymentMode === pm ? "#4F46E5" : "#E2E8F0"}`,
+                          background: newInvPaymentMode === pm ? "#EEF2FF" : "#FFFFFF",
+                          color: newInvPaymentMode === pm ? "#4F46E5" : "#64748B",
+                          fontWeight: 800,
+                          fontSize: "11px",
+                          cursor: "pointer"
+                        }}
+                      >
+                        {pm}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               <div>
-                <label style={labelStyle}>Test Profile / Diagnostic Service Name</label>
-                <input value={newInvTestName} onChange={(e) => setNewInvTestName(e.target.value)} placeholder="e.g. Complete Blood Count / Full Body Profile" style={inputStyle} />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Specimen Type</label>
-                <input value={newInvSpecimen} onChange={(e) => setNewInvSpecimen(e.target.value)} placeholder="e.g. Whole Blood (EDTA) / Routine Serum" style={inputStyle} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label style={labelStyle}>Standard Price (INR) *</label>
-                  <input type="number" required value={newInvPrice} onChange={(e) => setNewInvPrice(e.target.value)} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Discount / Waiver (INR)</label>
-                  <input type="number" value={newInvDiscount} onChange={(e) => setNewInvDiscount(e.target.value)} style={inputStyle} />
-                </div>
-              </div>
-
-              <div>
-                <label style={labelStyle}>Payment Status *</label>
-                <div className="flex gap-3">
-                  {["paid", "unpaid", "waived"].map((st) => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => setNewInvStatus(st)}
-                      style={{
-                        flex: 1,
-                        padding: "12px",
-                        borderRadius: "12px",
-                        border: `2px solid ${newInvStatus === st ? "#059669" : "#E2E8F0"}`,
-                        background: newInvStatus === st ? "#ECFDF5" : "#FFFFFF",
-                        color: newInvStatus === st ? "#059669" : "#64748B",
-                        fontWeight: 800,
-                        fontSize: "13px",
-                        textTransform: "uppercase",
-                        cursor: "pointer"
-                      }}
-                    >
-                      {st}
-                    </button>
-                  ))}
-                </div>
+                <label style={labelStyle}>Clinical Billing Remarks / Notes</label>
+                <input value={newInvNotes} onChange={(e) => setNewInvNotes(e.target.value)} placeholder="e.g. Fasting sample verified. Receipt valid for insurance claim." style={inputStyle} />
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t" style={{ borderColor: "#E2E8F0" }}>
                 <button type="button" onClick={() => setShowCreateInvoiceModal(false)} style={{ padding: "12px 24px", borderRadius: "12px", background: "#F1F5F9", color: "#475569", fontWeight: 800, border: "none", cursor: "pointer", fontSize: "14px" }}>Cancel</button>
-                <button type="submit" disabled={submitting} style={{ padding: "12px 28px", borderRadius: "12px", background: "linear-gradient(135deg, #059669 0%, #10B981 100%)", color: "white", fontWeight: 800, border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)", fontSize: "14px" }}>
-                  {submitting ? "Creating..." : "➕ Create Direct Invoice"}
+                <button type="submit" disabled={submitting} style={{ padding: "12px 32px", borderRadius: "12px", background: "linear-gradient(135deg, #059669 0%, #10B981 100%)", color: "white", fontWeight: 800, border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(16, 185, 129, 0.25)", fontSize: "14px" }}>
+                  {submitting ? "Creating..." : "➕ Generate Direct Invoice & Receipt"}
                 </button>
               </div>
             </form>

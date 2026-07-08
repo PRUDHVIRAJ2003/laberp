@@ -123,8 +123,16 @@ export default function PatientPortal() {
           token: otp,
           type: "email",
         });
-        if (error) setMessage("Invalid OTP code. Please try again.");
-        else if (data.session) window.location.href = "/patient/dashboard";
+        if (error) {
+          setMessage("Invalid OTP code. Please try again.");
+        } else if (data.session) {
+          localStorage.setItem("patient_portal_session", JSON.stringify({
+            userId: data.session.user.id,
+            email: identifier,
+            loggedInAt: Date.now()
+          }));
+          window.location.href = "/patient/dashboard";
+        }
       } else {
         // WhatsApp verification
         const res = await fetch("/api/auth/whatsapp-otp", {
@@ -133,8 +141,14 @@ export default function PatientPortal() {
           body: JSON.stringify({ action: "verify", phone: identifier, otp }),
         });
         const data = await res.json();
-        if (!res.ok) setMessage("Error: " + (data.error || "Verification failed."));
-        else {
+        if (!res.ok) {
+          setMessage("Error: " + (data.error || "Verification failed."));
+        } else {
+          localStorage.setItem("patient_portal_session", JSON.stringify({
+            userId: data.userId || null,
+            phone: identifier,
+            loggedInAt: Date.now()
+          }));
           setMessage("Verification successful! Redirecting...");
           window.location.href = "/patient/dashboard";
         }

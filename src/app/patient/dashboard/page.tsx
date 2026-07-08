@@ -53,25 +53,93 @@ export default function PatientDashboard() {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      
+      let currentUserId = session?.user?.id;
+      let currentUserPhone = "";
+      let currentUserEmail = session?.user?.email || "";
+
+      if (!currentUserId) {
+        const storedSession = localStorage.getItem("patient_portal_session");
+        if (storedSession) {
+          try {
+            const parsed = JSON.parse(storedSession);
+            if (parsed.userId) currentUserId = parsed.userId;
+            if (parsed.phone) currentUserPhone = parsed.phone;
+            if (parsed.email) currentUserEmail = parsed.email;
+          } catch (e) {}
+        }
+      }
+
+      if (!currentUserId && !currentUserPhone && !currentUserEmail) {
         window.location.href = "/patient";
         return;
       }
 
-      const [profRes, repRes, brRes, testRes, grpRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle(),
-        supabase.from("reports").select("*, tests(*), test_groups(*), lab_branches(*)").eq("patient_id", session.user.id).order("created_at", { ascending: false }),
+      let profQuery = supabase.from("profiles").select("*");
+      if (currentUserId) {
+        profQuery = profQuery.eq("id", currentUserId);
+      } else if (currentUserPhone) {
+        const last10 = currentUserPhone.replace(/[^0-9]/g, "").slice(-10);
+        profQuery = profQuery.ilike("phone_number", `%${last10}%`);
+      } else if (currentUserEmail) {
+        profQuery = profQuery.ilike("email", currentUserEmail);
+      }
+      const profRes = await profQuery.maybeSingle();
+
+      const [brRes, testRes, grpRes] = await Promise.all([
         supabase.from("lab_branches").select("*").order("name"),
         supabase.from("tests").select("*").order("name"),
         supabase.from("test_groups").select("*").order("name"),
       ]);
 
-      if (profRes.data) {
-        setProfile(profRes.data);
-        setContactPhone(profRes.data.phone_number || profRes.data.phone || "");
-        setAddress(profRes.data.address || "");
+      let profObj = profRes.data;
+      if (!profObj) {
+        profObj = {
+          id: currentUserId || "portal-patient",
+          full_name: "Valued Patient",
+          phone_number: currentUserPhone,
+          email: currentUserEmail,
+          role: "patient"
+        };
       }
-      if (repRes.data) setReports(repRes.data);
+      setProfile(profObj);
+      setContactPhone(profObj.phone_number || profObj.phone || currentUserPhone || "");
+      setAddress(profObj.address || "");
+
+      // Fetch patient reports by patient_id OR phone_number
+      const targetId = profObj.id !== "portal-patient" ? profObj.id : currentUserId;
+      const targetPhone = profObj.phone_number || profObj.phone || currentUserPhone;
+      let allReports: any[] = [];
+
+      if (targetId) {
+        const { data: idReports } = await supabase
+          .from("reports")
+          .select("*, tests(*), test_groups(*), lab_branches(*)")
+          .eq("patient_id", targetId)
+          .order("created_at", { ascending: false });
+        if (idReports) allReports.push(...idReports);
+      }
+
+      if (targetPhone) {
+        const last10 = targetPhone.replace(/[^0-9]/g, "").slice(-10);
+        if (last10.length === 10) {
+          const { data: phoneReports } = await supabase
+            .from("reports")
+            .select("*, tests(*), test_groups(*), lab_branches(*)")
+            .ilike("patient_phone", `%${last10}%`)
+            .order("created_at", { ascending: false });
+          if (phoneReports) {
+            phoneReports.forEach((r) => {
+              if (!allReports.some((existing) => existing.id === r.id)) {
+                allReports.push(r);
+              }
+            });
+          }
+        }
+      }
+
+      setReports(allReports);
+
       if (brRes.data) {
         setBranches(brRes.data);
         if (brRes.data[0]) setSelectedBranchId(brRes.data[0].id);
@@ -92,6 +160,7 @@ export default function PatientDashboard() {
   }
 
   const handleSignOut = async () => {
+    localStorage.removeItem("patient_portal_session");
     await supabase.auth.signOut();
     window.location.href = "/patient";
   };
