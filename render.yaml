@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: justlab-whatsapp-gateway
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm run whatsapp-server
+    envVars:
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: whatsapp-auth-data
+      mountPath: /opt/render/project/src
+      sizeGB: 1

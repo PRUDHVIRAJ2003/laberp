@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
       console.log("────────────────────────────────────────────");
       console.log(`📧 [EMAIL OTP GENERATED] To: ${targetEmail}`);
-      console.log(`   OTP Code: ${generatedCode} (Reason: ${reason})`);
+      console.log(`   OTP Code: ****** (Reason: ${reason})`);
       console.log("────────────────────────────────────────────");
 
       // Send Email via Resend

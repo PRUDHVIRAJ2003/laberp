@@ -379,7 +379,7 @@ export default function PatientDashboard() {
         )}
 
         {/* Section 2: Published Official Reports */}
-        <div style={{ background: "white", borderRadius: "24px", padding: "28px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
+        <div id="reports-section" style={{ background: "white", borderRadius: "24px", padding: "28px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
           <div className="flex justify-between items-center pb-4 mb-6 border-b">
             <div>
               <h3 style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A", margin: 0 }}>📑 My Verified Laboratory Reports</h3>
@@ -964,6 +964,66 @@ export default function PatientDashboard() {
           </div>
         </div>
       )}
+
+      {/* 100% Mobile Version App Bottom Navigation Bar */}
+      <nav className="mobile-bottom-nav">
+        <a
+          href="#reports-section"
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById("reports-section")?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="mobile-bottom-nav-item active"
+        >
+          <span className="nav-icon">📋</span>
+          <span>Reports</span>
+        </a>
+        <a
+          href="#book"
+          onClick={(e) => { e.preventDefault(); setShowBookModal(true); }}
+          className="mobile-bottom-nav-item"
+        >
+          <span
+            className="nav-icon"
+            style={{
+              background: "var(--primary-gradient)",
+              color: "white",
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 4px 12px rgba(79, 70, 229, 0.4)",
+            }}
+          >
+            ➕
+          </span>
+          <span>Book Test</span>
+        </a>
+        <a
+          href="#locate"
+          onClick={(e) => {
+            e.preventDefault();
+            handleLocateMe();
+          }}
+          className="mobile-bottom-nav-item"
+        >
+          <span className="nav-icon">📍</span>
+          <span>GPS Locate</span>
+        </a>
+        <a
+          href="#signout"
+          onClick={(e) => {
+            e.preventDefault();
+            handleSignOut();
+          }}
+          className="mobile-bottom-nav-item"
+        >
+          <span className="nav-icon">🚪</span>
+          <span>Logout</span>
+        </a>
+      </nav>
     </div>
   );
 }

@@ -390,6 +390,30 @@ export default function AdminDashboard() {
           </table>
         </div>
       </div>
+
+      {/* Admin Mobile & Tablet Sticky Bottom Nav */}
+      <nav className="admin-mobile-bottom-nav">
+        <Link href="/admin" className="admin-mobile-nav-item active">
+          <span className="icon">📊</span>
+          <span>Overview</span>
+        </Link>
+        <Link href="/admin/reports" className="admin-mobile-nav-item">
+          <span className="icon">📑</span>
+          <span>Reports</span>
+        </Link>
+        <Link href="/admin/patients" className="admin-mobile-nav-item">
+          <span className="icon">👤</span>
+          <span>Patients</span>
+        </Link>
+        <Link href="/admin/whatsapp" className="admin-mobile-nav-item">
+          <span className="icon">💬</span>
+          <span>WhatsApp</span>
+        </Link>
+        <Link href="/admin/branches" className="admin-mobile-nav-item">
+          <span className="icon">🏢</span>
+          <span>Branches</span>
+        </Link>
+      </nav>
     </div>
   );
 }

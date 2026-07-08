@@ -22,6 +22,12 @@ const sessions = new Map();
 const logs = [];
 
 function addLog(branchId, branchName, phone, status, message, error = null) {
+  const safeMessage = message
+    ? message.replace(/verification code is:\s*\*?(\d{6})\*?/gi, "verification code is: ******")
+             .replace(/OTP:\s*(\d{6})/gi, "OTP: ******")
+             .slice(0, 80)
+    : "";
+
   const entry = {
     id: Date.now() + '-' + Math.floor(Math.random()*1000),
     timestamp: new Date().toISOString(),
@@ -29,7 +35,7 @@ function addLog(branchId, branchName, phone, status, message, error = null) {
     branchName: branchName || branchId || 'Main Lab',
     phone,
     status, // 'SENT' | 'FAILED'
-    message: message?.slice(0, 80) + (message?.length > 80 ? '...' : ''),
+    message: safeMessage + (safeMessage.length > 80 ? '...' : ''),
     error: error ? String(error) : null
   };
   logs.unshift(entry);

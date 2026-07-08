@@ -22,7 +22,7 @@ function normalizePhone(raw: string): string {
 // ─── Send WhatsApp via Baileys Gateway ───────────────────────────
 async function sendWhatsApp(phone: string, message: string): Promise<{ sent: boolean; error?: string }> {
   // Base URL only — NO trailing path (the endpoint is /send-message)
-  const baseUrl = process.env.BAILEYS_SERVICE_URL || "http://localhost:3005";
+  const baseUrl = process.env.BAILEYS_SERVICE_URL || process.env.WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
 
   try {
     const res = await fetch(`${baseUrl}/send-message`, {
@@ -89,9 +89,9 @@ export async function POST(req: NextRequest) {
         `Your LAB ERP verification code is: *${generatedCode}*\n\nThis code expires in 10 minutes. Do not share it with anyone.`
       );
 
-      // Log to server console regardless
+      // Log delivery status without revealing sensitive OTP code
       console.log("──────────────────────────────────");
-      console.log(`📱 OTP for ${normalized}: ${generatedCode}`);
+      console.log(`📱 OTP generated & dispatched for ${normalized} (******)`);
       console.log(`   WhatsApp: ${whatsappResult.sent ? "✅ Sent" : `❌ ${whatsappResult.error}`}`);
       console.log("──────────────────────────────────");
 
