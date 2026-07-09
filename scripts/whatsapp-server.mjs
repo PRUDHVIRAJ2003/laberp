@@ -230,7 +230,7 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
           });
         } else {
           await sock.sendMessage(remoteJid, {
-            text: `🤖 *We couldn't find a published report linked to phone (+${phoneNum}).*\n\nPlease reply with your full name in this exact format:\n*NAME: Your Full Name*\n_(Example: NAME: Ramesh Kumar)_\nSo we can search our database by name!`
+            text: `🤖 *We couldn't find a published report linked directly to your WhatsApp number.*\n\nPlease reply with your full name in this exact format:\n*NAME: Your Full Name*\n_(Example: NAME: Ramesh Kumar)_\n\nOr login to view all your verified reports anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
           });
         }
       } else if (upper === '2' || upper.includes('INVOICE') || upper.includes('BILL')) {
@@ -327,15 +327,26 @@ async function searchReportInSupabase(query, isPhone = true) {
   if (!supaUrl || !supaKey) return null;
 
   try {
-    let endpoint = isPhone
-      ? `${supaUrl}/rest/v1/reports?status=eq.published&or=(patient_phone.ilike.*${query.slice(-10)}*)&order=created_at.desc&limit=1`
-      : `${supaUrl}/rest/v1/reports?status=eq.published&patient_name=ilike.*${encodeURIComponent(query)}*&order=created_at.desc&limit=1`;
-
-    let res = await fetch(endpoint, {
+    const endpoint = `${supaUrl}/rest/v1/reports?status=eq.published&order=created_at.desc&limit=50`;
+    const res = await fetch(endpoint, {
       headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
     });
-    let data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data[0] : null;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+
+    const cleanQuery = String(query || "").replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
+    const last10 = cleanQuery.replace(/[^0-9]/g, "").slice(-10);
+
+    for (const r of data) {
+      if (isPhone) {
+        const rPhone = r.patient_phone ? String(r.patient_phone).replace(/[^0-9]/g, "") : "";
+        if (last10.length >= 7 && rPhone.includes(last10)) return r;
+      } else {
+        const rName = r.patient_name ? String(r.patient_name).toLowerCase() : "";
+        if (cleanQuery.length >= 3 && (rName.includes(cleanQuery) || cleanQuery.includes(rName))) return r;
+      }
+    }
+    return null;
   } catch (e) {
     return null;
   }

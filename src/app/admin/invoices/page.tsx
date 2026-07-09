@@ -469,14 +469,14 @@ export default function InvoicesAndContractsPage() {
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
     doc.text("BILLED TO (PATIENT)", 18, 45);
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
-    doc.text(patName, 18, 52);
+    doc.text(patName.slice(0, 28), 18, 52);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Phone: ${rep.profiles?.phone_number || rep.profiles?.phone || "—"}`, 18, 58);
-    doc.text(`Specimen: ${rep.specimen_name || "Whole Blood (EDTA)"}`, 18, 64);
+    doc.text(`Phone: ${rep.profiles?.phone_number || rep.profiles?.phone || "—"}`.slice(0, 38), 18, 58);
+    doc.text(`Specimen: ${rep.specimen_name || "Whole Blood (EDTA)"}`.slice(0, 38), 18, 64);
 
     // Right Box: Invoice Record Metadata
     doc.setFillColor(248, 250, 252);
@@ -485,12 +485,12 @@ export default function InvoicesAndContractsPage() {
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
     doc.text("INVOICE & LINKED REPORT REF", 114, 45);
-    doc.setFontSize(10.5);
+    doc.setFontSize(10);
     doc.setTextColor(79, 70, 229);
     const refNum = rep.report_number || `REP-${rep.id?.slice(0, 6)?.toUpperCase() || "REF"}`;
-    doc.text(`${invNum} (Ref: ${refNum})`.slice(0, 36), 114, 52);
+    doc.text(`${invNum} (Ref: ${refNum})`.slice(0, 34), 114, 52);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`Date: ${new Date(rep.created_at || Date.now()).toLocaleDateString("en-IN")}`, 114, 58);
     doc.setFont("helvetica", "bold");
@@ -503,13 +503,20 @@ export default function InvoicesAndContractsPage() {
     autoTable(doc, {
       startY: afterMetaY,
       theme: "striped",
-      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9 },
-      bodyStyles: { fontSize: 9.5, cellPadding: 5, textColor: [30, 41, 59], fontStyle: "bold" },
-      head: [["Description / Diagnostic Profile", "Contract Agreement Rate", "Standard Price", "Discount / Adjustment", "Net Payable Amount"]],
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
+      bodyStyles: { fontSize: 8.5, cellPadding: 4, textColor: [30, 41, 59], fontStyle: "bold" },
+      columnStyles: {
+        0: { cellWidth: 62 },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 26, halign: "right" },
+        3: { cellWidth: 26, halign: "right" },
+        4: { cellWidth: 26, halign: "right" }
+      },
+      head: [["Description / Diagnostic Profile", "Contract Rate", "Standard Price", "Discount / Adj", "Net Payable"]],
       body: [
         [
-          rep.tests?.name || rep.test_groups?.name || "Laboratory Diagnostic Service",
-          rep.contract_name || "Standard Patient Rate",
+          (rep.tests?.name || rep.test_groups?.name || "Laboratory Diagnostic Service").slice(0, 40),
+          (rep.contract_name || "Standard Patient Rate").slice(0, 28),
           `Rs. ${std.toFixed(2)}`,
           disc > 0 ? `- Rs. ${disc.toFixed(2)}` : "Rs. 0.00",
           `Rs. ${net.toFixed(2)}`
@@ -518,7 +525,7 @@ export default function InvoicesAndContractsPage() {
       foot: [
         ["", "", "", "TOTAL NET AMOUNT:", `Rs. ${net.toFixed(2)} INR`]
       ],
-      footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: "bold", fontSize: 10 }
+      footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: "bold", fontSize: 9.5 }
     });
 
     const afterTableY = Math.max((doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 14 : 140, 140);

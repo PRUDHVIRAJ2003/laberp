@@ -52,21 +52,27 @@ export default function PatientDashboard() {
   async function loadPatientData() {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      let currentUserId = session?.user?.id;
+      let currentUserId = "";
       let currentUserPhone = "";
-      let currentUserEmail = session?.user?.email || "";
+      let currentUserEmail = "";
 
-      if (!currentUserId) {
-        const storedSession = localStorage.getItem("patient_portal_session");
-        if (storedSession) {
-          try {
-            const parsed = JSON.parse(storedSession);
-            if (parsed.userId) currentUserId = parsed.userId;
-            if (parsed.phone) currentUserPhone = parsed.phone;
-            if (parsed.email) currentUserEmail = parsed.email;
-          } catch (e) {}
+      // Prioritize explicit patient portal session from localStorage so admin tabs do not override patient identity
+      const storedSession = localStorage.getItem("patient_portal_session");
+      if (storedSession) {
+        try {
+          const parsed = JSON.parse(storedSession);
+          if (parsed.userId) currentUserId = parsed.userId;
+          if (parsed.phone) currentUserPhone = parsed.phone;
+          if (parsed.email) currentUserEmail = parsed.email;
+        } catch (e) {}
+      }
+
+      // If no explicit patient session, fall back to Supabase auth session
+      if (!currentUserId && !currentUserPhone && !currentUserEmail) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          currentUserId = session.user.id;
+          currentUserEmail = session.user.email || "";
         }
       }
 
@@ -75,16 +81,30 @@ export default function PatientDashboard() {
         return;
       }
 
-      let profQuery = supabase.from("profiles").select("*");
-      if (currentUserId) {
-        profQuery = profQuery.eq("id", currentUserId);
-      } else if (currentUserPhone) {
+      let profObj: any = null;
+
+      // If logged in via phone (WhatsApp OTP), query by phone or build clean patient profile
+      if (currentUserPhone) {
         const last10 = currentUserPhone.replace(/[^0-9]/g, "").slice(-10);
-        profQuery = profQuery.ilike("phone_number", `%${last10}%`);
+        const { data: phoneProf } = await supabase.from("profiles").select("*").ilike("phone_number", `%${last10}%`).maybeSingle();
+        if (phoneProf && phoneProf.role !== "admin" && phoneProf.role !== "super_admin") {
+          profObj = phoneProf;
+        } else {
+          profObj = {
+            id: currentUserId || "portal-patient",
+            full_name: "Valued Patient",
+            phone_number: currentUserPhone,
+            email: currentUserEmail,
+            role: "patient"
+          };
+        }
+      } else if (currentUserId) {
+        const { data: idProf } = await supabase.from("profiles").select("*").eq("id", currentUserId).maybeSingle();
+        profObj = idProf;
       } else if (currentUserEmail) {
-        profQuery = profQuery.ilike("email", currentUserEmail);
+        const { data: emailProf } = await supabase.from("profiles").select("*").ilike("email", currentUserEmail).maybeSingle();
+        profObj = emailProf;
       }
-      const profRes = await profQuery.maybeSingle();
 
       const [brRes, testRes, grpRes] = await Promise.all([
         supabase.from("lab_branches").select("*").order("name"),
@@ -92,7 +112,6 @@ export default function PatientDashboard() {
         supabase.from("test_groups").select("*").order("name"),
       ]);
 
-      let profObj = profRes.data;
       if (!profObj) {
         profObj = {
           id: currentUserId || "portal-patient",
