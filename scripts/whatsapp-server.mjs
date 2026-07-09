@@ -207,18 +207,23 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
       const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper);
       if (msg.key.fromMe && !isTestCmd) continue;
 
-      const phoneNum = (msg.key.participant || remoteJid || '').split('@')[0].replace(/[^0-9]/g, '');
-      console.log(`🤖 [Bot - ${session.branchName}] Received "${text}" from ${phoneNum}`);
+      // Resolve sender phone number (handling Baileys multi-device LID format vs standard s.whatsapp.net)
+      const rawAlt = msg.key.remoteJidAlt || msg.key.participantAlt || '';
+      const rawMain = msg.key.participant || remoteJid || '';
+      const phoneNum = (rawAlt.includes('@s.whatsapp.net') ? rawAlt : rawMain).split('@')[0].replace(/[^0-9]/g, '');
+      const pushName = msg.pushName || '';
+      console.log(`🤖 [Bot - ${session.branchName}] Received "${text}" from ${phoneNum} (${pushName})`);
 
       if (upper === '1' || upper.includes('REPORT')) {
-        const found = await searchReportInSupabase(phoneNum, true);
+        const found = await searchReportInSupabase(phoneNum, true, pushName);
         if (found) {
           await sock.sendMessage(remoteJid, {
             text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
           });
         } else {
+          const displayNum = phoneNum.length > 13 ? 'your WhatsApp account' : `phone (+${phoneNum})`;
           await sock.sendMessage(remoteJid, {
-            text: `🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to your WhatsApp phone number (+${phoneNum}).\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`
+            text: `🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to ${displayNum}.\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`
           });
         }
       } else if (upper === '2' || upper.includes('INVOICE') || upper.includes('BILL')) {
@@ -309,7 +314,7 @@ app.get('/logs', (req, res) => {
 });
 
 // Helper to search Supabase reports
-async function searchReportInSupabase(query, isPhone = true) {
+async function searchReportInSupabase(query, isPhone = true, pushName = "") {
   const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://htxafjkknkpgimykjifb.supabase.co";
   const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0eGFmamtrbmtwZ2lteWtqaWZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM1NjEwNCwiZXhwIjoyMDk4OTMyMTA0fQ.-6Iq96WcAFGCFLWt_KymBNME1mgOBaIRLeLaV86uosE";
   if (!supaUrl || !supaKey) return null;
@@ -329,6 +334,13 @@ async function searchReportInSupabase(query, isPhone = true) {
       if (isPhone) {
         const rPhone = r.patient_phone ? String(r.patient_phone).replace(/[^0-9]/g, "") : "";
         if (last10.length >= 7 && rPhone.includes(last10)) return r;
+
+        // If phone query is an internal Baileys LID (>13 digits) OR didn't match directly, verify if sender's WhatsApp display name matches patient_name
+        const cleanPushName = String(pushName || "").trim().toLowerCase();
+        const rName = r.patient_name ? String(r.patient_name).trim().toLowerCase() : "";
+        if (cleanPushName.length >= 3 && rName && (rName === cleanPushName || rName.includes(cleanPushName) || cleanPushName.includes(rName))) {
+          return r;
+        }
       } else {
         const rName = r.patient_name ? String(r.patient_name).toLowerCase() : "";
         if (cleanQuery.length >= 3 && (rName.includes(cleanQuery) || cleanQuery.includes(rName))) return r;
