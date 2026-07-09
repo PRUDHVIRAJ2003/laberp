@@ -54,6 +54,7 @@ export default function InvoicesAndContractsPage() {
   const [newInvStatus, setNewInvStatus] = useState("paid");
   const [newInvPaymentMode, setNewInvPaymentMode] = useState("UPI / Instant QR");
   const [newInvNotes, setNewInvNotes] = useState("");
+  const [newInvLinkedReportNo, setNewInvLinkedReportNo] = useState("");
 
   const getPatientName = (r: any) => {
     return r?.patient_name || r?.beneficiary_name || r?.profiles?.full_name || `${r?.profiles?.first_name || ""} ${r?.profiles?.last_name || ""}`.trim() || (r?.notes?.match(/Patient:\s*([^|]+)/i)?.[1]?.trim()) || "Walk-in Patient";
@@ -338,7 +339,7 @@ export default function InvoicesAndContractsPage() {
       contract_name: newInvContractName || "Standard Patient Rate",
       payment_status: newInvStatus || "paid",
       invoice_number: invNum,
-      report_number: repNum,
+      report_number: newInvLinkedReportNo || repNum,
       status: "published",
       sample_status: "completed",
       referring_doctor: newInvDoctor || "Self / General",
@@ -353,7 +354,7 @@ export default function InvoicesAndContractsPage() {
     if (error && (error.message?.includes("column") || error.message?.includes("schema cache"))) {
       const fallbackPayload = {
         invoice_number: invNum,
-        report_number: repNum,
+        report_number: newInvLinkedReportNo || repNum,
         specimen_name: newInvSpecimen || "Whole Blood (EDTA)",
         sample_type: newInvCollectionMode || "Routine Serum",
         standard_price: std,
@@ -483,10 +484,11 @@ export default function InvoicesAndContractsPage() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
-    doc.text("INVOICE RECORD & STATUS", 114, 45);
-    doc.setFontSize(11);
+    doc.text("INVOICE & LINKED REPORT REF", 114, 45);
+    doc.setFontSize(10.5);
     doc.setTextColor(79, 70, 229);
-    doc.text(invNum, 114, 52);
+    const refNum = rep.report_number || `REP-${rep.id?.slice(0, 6)?.toUpperCase() || "REF"}`;
+    doc.text(`${invNum} (Ref: ${refNum})`.slice(0, 36), 114, 52);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
@@ -1310,8 +1312,15 @@ export default function InvoicesAndContractsPage() {
                       <div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>📞 {previewInvoice.profiles?.phone_number || previewInvoice.profiles?.phone || "No Phone Recorded"}</div>
                     </div>
                     <div style={{ background: "#F8FAFC", padding: "20px 24px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
-                      <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>TAX INVOICE DETAILS</span>
-                      <div style={{ fontSize: "18px", fontWeight: 900, color: "#4F46E5" }}>{invNum}</div>
+                      <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>TAX INVOICE & LINKED REPORT</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "18px", fontWeight: 900, color: "#4F46E5" }}>{invNum}</span>
+                        {previewInvoice.report_number && (
+                          <span style={{ fontSize: "12px", fontWeight: 800, background: "#EEF2FF", color: "#4F46E5", padding: "3px 8px", borderRadius: "6px" }}>
+                            Ref: {previewInvoice.report_number}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>📅 Date: {new Date(previewInvoice.created_at || Date.now()).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
                       <div style={{ marginTop: "8px" }}>
                         <span style={{ fontSize: "11px", fontWeight: 900, background: "#D1FAE5", color: "#065F46", padding: "4px 10px", borderRadius: "6px" }}>PAID & VERIFIED RECEIPT</span>
@@ -1543,6 +1552,43 @@ export default function InvoicesAndContractsPage() {
             </div>
 
             <form onSubmit={handleCreateStandaloneInvoice} className="space-y-6">
+              {/* LINK TO EXISTING REPORT SELECTOR */}
+              <div style={{ background: "#EEF2FF", padding: "16px 20px", borderRadius: "16px", border: "1px solid #C7D2FE" }}>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#4F46E5", textTransform: "uppercase", marginBottom: "8px" }}>
+                  🔗 Link Invoice to Existing Lab Report (Optional Auto-Fill)
+                </div>
+                <select
+                  value={newInvLinkedReportNo}
+                  onChange={(e) => {
+                    const selectedRef = e.target.value;
+                    setNewInvLinkedReportNo(selectedRef);
+                    const foundRep = reports.find(
+                      (r) => (r.report_number || `REP-${r.id?.slice(0, 6)?.toUpperCase()}`) === selectedRef
+                    );
+                    if (foundRep) {
+                      setNewInvPatientName(getPatientName(foundRep));
+                      setNewInvPatientPhone(getPatientPhone(foundRep));
+                      setNewInvPatientEmail(getPatientEmail(foundRep));
+                      setNewInvTestName(getTestName(foundRep));
+                      setNewInvSpecimen(foundRep.specimen_name || "Whole Blood (EDTA)");
+                      if (foundRep.standard_price) setNewInvPrice(String(foundRep.standard_price));
+                      if (foundRep.discount_amount) setNewInvDiscount(String(foundRep.discount_amount));
+                    }
+                  }}
+                  style={inputStyle}
+                >
+                  <option value="">⚡ New Standalone Invoice (No Existing Report Linked)</option>
+                  {reports.map((r) => {
+                    const repRef = r.report_number || `REP-${r.id?.slice(0, 6)?.toUpperCase()}`;
+                    return (
+                      <option key={r.id} value={repRef}>
+                        {repRef} — {getPatientName(r)} ({getTestName(r)})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
               {/* SECTION 1: PATIENT DEMOGRAPHICS */}
               <div style={{ background: "#F8FAFC", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "12px", fontWeight: 900, color: "#334155", textTransform: "uppercase", marginBottom: "14px", letterSpacing: "0.5px" }}>👤 Patient Demographics & Contact</div>

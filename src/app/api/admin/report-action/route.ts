@@ -277,33 +277,35 @@ export async function POST(req: NextRequest) {
         doc.roundedRect(14, 44, 182, 38, 3, 3, "F");
 
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setTextColor(100, 116, 139);
-        doc.text("INVOICE / BILLING NO", 20, 52);
-        doc.text("DATE & TIME", 80, 52);
-        doc.text("PATIENT NAME", 140, 52);
+        doc.text("INVOICE NO & REPORT LINK", 20, 52);
+        doc.text("DATE & TIME", 105, 52);
+        doc.text("PATIENT NAME", 150, 52);
 
-        doc.setFontSize(11);
+        doc.setFontSize(10.5);
         doc.setTextColor(15, 23, 42);
-        doc.text(billingInfo.invoice_number || `INV-${repNum}`, 20, 59);
-        doc.text(timeStr, 80, 59);
-        doc.text(patName || "Valued Patient", 140, 59);
+        const invDisplay = `${billingInfo.invoice_number || `INV-${repNum}`} (Ref: ${repNum})`;
+        doc.text(invDisplay.slice(0, 38), 20, 59);
+        doc.text(timeStr, 105, 59);
+        doc.text((patName || "Valued Patient").slice(0, 22), 150, 59);
 
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setTextColor(100, 116, 139);
-        doc.text("SPECIMEN & SAMPLE", 20, 68);
-        doc.text("RATE CONTRACT AGREEMENT", 80, 68);
-        doc.text("PAYMENT STATUS", 140, 68);
+        doc.text("SPECIMEN & SAMPLE TYPE", 20, 68);
+        doc.text("RATE CONTRACT AGREEMENT", 105, 68);
+        doc.text("PAYMENT STATUS", 165, 68);
 
         doc.setFontSize(10);
         doc.setTextColor(15, 23, 42);
-        doc.text(`${billingInfo.specimen_name || "Whole Blood"} (${billingInfo.sample_type || "Routine"})`, 20, 75);
-        doc.text(billingInfo.contract_name || "Standard Patient Rate", 80, 75);
+        const specDisplay = billingInfo.specimen_name || "Whole Blood (EDTA)";
+        doc.text(specDisplay.slice(0, 32), 20, 75);
+        doc.text((billingInfo.contract_name || "Standard Patient Rate").slice(0, 25), 105, 75);
 
         const statusStr = (billingInfo.payment_status || "paid").toUpperCase();
         if (statusStr === "PAID") doc.setTextColor(5, 150, 105);
         else doc.setTextColor(217, 119, 6);
-        doc.text(`[ ${statusStr} ]`, 140, 75);
+        doc.text(`[ ${statusStr} ]`, 165, 75);
 
         doc.setFillColor(15, 23, 42);
         doc.rect(14, 92, 182, 10, "F");
@@ -317,8 +319,8 @@ export async function POST(req: NextRequest) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
         doc.setTextColor(15, 23, 42);
-        doc.text(tName || "Diagnostic Test Panel", 20, 112);
-        doc.text(billingInfo.specimen_name || "Whole Blood (EDTA)", 100, 112);
+        doc.text((tName || "Diagnostic Test Panel").slice(0, 35), 20, 112);
+        doc.text(specDisplay.slice(0, 28), 100, 112);
         doc.text(`INR ${(billingInfo.standard_price || 500).toFixed(2)}`, 188, 112, { align: "right" });
 
         doc.line(14, 122, 196, 122);
@@ -330,26 +332,26 @@ export async function POST(req: NextRequest) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10);
         doc.setTextColor(100, 116, 139);
-        doc.text("Standard Gross Price:", 135, 134);
+        doc.text("Standard Gross Price:", 120, 134);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(15, 23, 42);
-        doc.text(`INR ${stdP.toFixed(2)}`, 188, 134, { align: "right" });
+        doc.text(`INR ${stdP.toFixed(2)}`, 190, 134, { align: "right" });
 
         if (disA > 0) {
           doc.setFont("helvetica", "bold");
           doc.setTextColor(220, 38, 38);
-          doc.text("Contract Discount / Waiver:", 135, 142);
+          doc.text("Contract Discount / Waiver:", 120, 142);
           doc.setFont("helvetica", "normal");
-          doc.text(`- INR ${disA.toFixed(2)}`, 188, 142, { align: "right" });
+          doc.text(`- INR ${disA.toFixed(2)}`, 190, 142, { align: "right" });
         }
 
         doc.setFillColor(240, 253, 244);
-        doc.roundedRect(120, 150, 76, 16, 2, 2, "F");
+        doc.roundedRect(118, 150, 78, 16, 2, 2, "F");
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(12);
+        doc.setFontSize(11);
         doc.setTextColor(5, 150, 105);
-        doc.text("NET AMOUNT DUE:", 125, 160);
-        doc.text(`INR ${netA.toFixed(2)}`, 186, 160, { align: "right" });
+        doc.text("NET AMOUNT DUE:", 124, 160);
+        doc.text(`INR ${netA.toFixed(2)}`, 190, 160, { align: "right" });
 
         // Fetch UPI QR Code for Server PDF
         let upiQrBase64 = "";
