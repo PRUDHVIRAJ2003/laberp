@@ -207,7 +207,7 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
       const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper) || upper.startsWith('NAME:');
       if (msg.key.fromMe && !isTestCmd) continue;
 
-      const phoneNum = remoteJid.split('@')[0];
+      const phoneNum = (msg.key.participant || remoteJid || '').split('@')[0].replace(/[^0-9]/g, '');
       console.log(`🤖 [Bot - ${session.branchName}] Received "${text}" from ${phoneNum}`);
 
       if (upper.startsWith('NAME:')) {
