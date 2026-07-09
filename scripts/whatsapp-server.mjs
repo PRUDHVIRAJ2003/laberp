@@ -316,40 +316,55 @@ app.get('/logs', (req, res) => {
 // Helper to search Supabase reports
 async function searchReportInSupabase(query, isPhone = true, pushName = "") {
   const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://htxafjkknkpgimykjifb.supabase.co";
-  const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0eGFmamtrbmtwZ2lteWtqaWZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM1NjEwNCwiZXhwIjoyMDk4OTMyMTA0fQ.-6Iq96WcAFGCFLWt_KymBNME1mgOBaIRLeLaV86uosE";
-  if (!supaUrl || !supaKey) return null;
+  // Always use SERVICE_ROLE_KEY (never anon key) so RLS policies do not block server-side WhatsApp lookups
+  const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0eGFmamtrbmtwZ2lteWtqaWZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM1NjEwNCwiZXhwIjoyMDk4OTMyMTA0fQ.-6Iq96WcAFGCFLWt_KymBNME1mgOBaIRLeLaV86uosE";
+
+  const cleanQuery = String(query || "").replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
+  const last10 = cleanQuery.replace(/[^0-9]/g, "").slice(-10);
+  const cleanPushName = String(pushName || "").trim().toLowerCase();
 
   try {
-    const endpoint = `${supaUrl}/rest/v1/reports?status=eq.published&order=created_at.desc&limit=50`;
+    const endpoint = `${supaUrl}/rest/v1/reports?status=eq.published&order=created_at.desc&limit=100`;
     const res = await fetch(endpoint, {
       headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
     });
     const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) return null;
+    if (Array.isArray(data) && data.length > 0) {
+      for (const r of data) {
+        if (isPhone) {
+          const rPhone = r.patient_phone ? String(r.patient_phone).replace(/[^0-9]/g, "") : "";
+          if (last10.length >= 7 && rPhone.includes(last10)) return r;
 
-    const cleanQuery = String(query || "").replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
-    const last10 = cleanQuery.replace(/[^0-9]/g, "").slice(-10);
-
-    for (const r of data) {
-      if (isPhone) {
-        const rPhone = r.patient_phone ? String(r.patient_phone).replace(/[^0-9]/g, "") : "";
-        if (last10.length >= 7 && rPhone.includes(last10)) return r;
-
-        // If phone query is an internal Baileys LID (>13 digits) OR didn't match directly, verify if sender's WhatsApp display name matches patient_name
-        const cleanPushName = String(pushName || "").trim().toLowerCase();
-        const rName = r.patient_name ? String(r.patient_name).trim().toLowerCase() : "";
-        if (cleanPushName.length >= 3 && rName && (rName === cleanPushName || rName.includes(cleanPushName) || cleanPushName.includes(rName))) {
-          return r;
+          const rName = r.patient_name ? String(r.patient_name).trim().toLowerCase() : "";
+          if (cleanPushName.length >= 3 && rName && (rName === cleanPushName || rName.includes(cleanPushName) || cleanPushName.includes(rName))) {
+            return r;
+          }
+        } else {
+          const rName = r.patient_name ? String(r.patient_name).toLowerCase() : "";
+          if (cleanQuery.length >= 3 && (rName.includes(cleanQuery) || cleanQuery.includes(rName))) return r;
         }
-      } else {
-        const rName = r.patient_name ? String(r.patient_name).toLowerCase() : "";
-        if (cleanQuery.length >= 3 && (rName.includes(cleanQuery) || cleanQuery.includes(rName))) return r;
       }
     }
-    return null;
   } catch (e) {
-    return null;
+    console.warn("Direct Supabase fetch failed in WhatsApp bot:", e);
   }
+
+  // Fail-safe fallback: call Vercel /api/patient/get-reports endpoint directly
+  try {
+    const apiRes = await fetch("https://laberp.vercel.app/api/patient/get-reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: cleanQuery, name: cleanPushName })
+    });
+    const apiData = await apiRes.json();
+    if (apiData.ok && Array.isArray(apiData.reports) && apiData.reports.length > 0) {
+      return apiData.reports[0];
+    }
+  } catch (err) {
+    console.warn("Fallback Vercel API fetch failed:", err);
+  }
+
+  return null;
 }
 
 // POST send message or PDF document
