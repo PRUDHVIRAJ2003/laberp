@@ -204,33 +204,21 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
       const upper = text.toUpperCase();
 
       // Ignore messages from self unless testing with HI, MENU, TEST, or 1-4
-      const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper) || upper.startsWith('NAME:');
+      const isTestCmd = ['HI', 'HELLO', 'MENU', 'TEST', '1', '2', '3', '4'].includes(upper);
       if (msg.key.fromMe && !isTestCmd) continue;
 
       const phoneNum = (msg.key.participant || remoteJid || '').split('@')[0].replace(/[^0-9]/g, '');
       console.log(`🤖 [Bot - ${session.branchName}] Received "${text}" from ${phoneNum}`);
 
-      if (upper.startsWith('NAME:')) {
-        const searchName = text.slice(5).trim();
-        const found = await searchReportInSupabase(searchName, false);
-        if (found) {
-          await sock.sendMessage(remoteJid, {
-            text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || searchName}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin to download your verified PDF report:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
-          });
-        } else {
-          await sock.sendMessage(remoteJid, {
-            text: `❌ *No Report Found*\nWe could not find any verified lab report matching "${searchName}". Please contact your lab branch reception.`
-          });
-        }
-      } else if (upper === '1' || upper.includes('REPORT')) {
+      if (upper === '1' || upper.includes('REPORT')) {
         const found = await searchReportInSupabase(phoneNum, true);
         if (found) {
           await sock.sendMessage(remoteJid, {
-            text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
+            text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
           });
         } else {
           await sock.sendMessage(remoteJid, {
-            text: `🤖 *We couldn't find a published report linked directly to your WhatsApp number.*\n\nPlease reply with your full name in this exact format:\n*NAME: Your Full Name*\n_(Example: NAME: Ramesh Kumar)_\n\nOr login to view all your verified reports anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
+            text: `🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to your WhatsApp phone number (+${phoneNum}).\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`
           });
         }
       } else if (upper === '2' || upper.includes('INVOICE') || upper.includes('BILL')) {
