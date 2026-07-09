@@ -54,6 +54,60 @@ if (!sessions.has('default')) {
   });
 }
 
+// Supabase Cloud Session Persistence for Ephemeral Environments (Render / Docker)
+const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://kifdgydghoqqxoxwffep.supabase.co";
+const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+async function restoreCredsFromSupabase(branchId, authDir) {
+  try {
+    if (!supaUrl || !supaKey) return;
+    const res = await fetch(`${supaUrl}/rest/v1/branch_configurations?branch_id=eq.wa_session_${branchId}`, {
+      headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
+    });
+    const data = await res.json();
+    if (Array.isArray(data) && data[0]?.config?.creds) {
+      if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
+      fs.writeFileSync(path.join(authDir, 'creds.json'), JSON.stringify(data[0].config.creds, null, 2), 'utf-8');
+      console.log(`☁️ [Branch: ${branchId}] Restored WhatsApp session from cloud storage!`);
+    }
+  } catch (err) {}
+}
+
+async function saveCredsToSupabase(branchId, authDir) {
+  try {
+    if (!supaUrl || !supaKey) return;
+    const credsPath = path.join(authDir, 'creds.json');
+    if (fs.existsSync(credsPath)) {
+      const credsRaw = fs.readFileSync(credsPath, 'utf-8');
+      const credsObj = JSON.parse(credsRaw);
+      await fetch(`${supaUrl}/rest/v1/branch_configurations`, {
+        method: "POST",
+        headers: {
+          "apikey": supaKey,
+          "Authorization": `Bearer ${supaKey}`,
+          "Content-Type": "application/json",
+          "Prefer": "resolution=merge-duplicates"
+        },
+        body: JSON.stringify({
+          branch_id: `wa_session_${branchId}`,
+          config: { creds: credsObj },
+          updated_at: new Date().toISOString()
+        })
+      });
+    }
+  } catch (err) {}
+}
+
+async function clearCredsInSupabase(branchId) {
+  try {
+    if (!supaUrl || !supaKey) return;
+    await fetch(`${supaUrl}/rest/v1/branch_configurations?branch_id=eq.wa_session_${branchId}`, {
+      method: "DELETE",
+      headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
+    });
+  } catch (err) {}
+}
+
 async function connectBranch(branchId = 'default', branchName = 'Main Laboratory') {
   let session = sessions.get(branchId);
   if (!session) {
@@ -64,8 +118,8 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
   }
 
   const authDir = path.resolve(`auth_info_baileys_${branchId}`);
-  if (!fs.existsSync(authDir)) {
-    fs.mkdirSync(authDir, { recursive: true });
+  if (!fs.existsSync(path.join(authDir, 'creds.json'))) {
+    await restoreCredsFromSupabase(branchId, authDir);
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -111,6 +165,7 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
         console.log(`\n❌ [Branch: ${session.branchName}] Logged out. Clearing stale auth data...`);
         session.qr = null;
         session.phone = null;
+        clearCredsInSupabase(branchId);
         if (fs.existsSync(authDir)) {
           try { fs.rmSync(authDir, { recursive: true, force: true }); } catch (e) {}
         }
@@ -125,7 +180,10 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
     }
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    saveCredsToSupabase(branchId, authDir);
+  });
 
   // Interactive 2-Way WhatsApp Chatbot Handler
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
