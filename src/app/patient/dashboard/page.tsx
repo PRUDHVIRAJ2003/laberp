@@ -106,36 +106,30 @@ export default function PatientDashboard() {
       setContactPhone(profObj.phone_number || profObj.phone || currentUserPhone || "");
       setAddress(profObj.address || "");
 
-      // Fetch patient reports by patient_id OR phone_number
+      // Fetch patient reports reliably via server endpoint (bypassing restrictive SELECT RLS policies)
       const targetId = profObj.id !== "portal-patient" ? profObj.id : currentUserId;
       const targetPhone = profObj.phone_number || profObj.phone || currentUserPhone;
+      const targetEmail = profObj.email || currentUserEmail;
+      const targetName = profObj.full_name && profObj.full_name !== "Valued Patient" ? profObj.full_name : "";
+
       let allReports: any[] = [];
-
-      if (targetId) {
-        const { data: idReports } = await supabase
-          .from("reports")
-          .select("*, tests(*), test_groups(*), lab_branches(*)")
-          .eq("patient_id", targetId)
-          .order("created_at", { ascending: false });
-        if (idReports) allReports.push(...idReports);
-      }
-
-      if (targetPhone) {
-        const last10 = targetPhone.replace(/[^0-9]/g, "").slice(-10);
-        if (last10.length === 10) {
-          const { data: phoneReports } = await supabase
-            .from("reports")
-            .select("*, tests(*), test_groups(*), lab_branches(*)")
-            .ilike("patient_phone", `%${last10}%`)
-            .order("created_at", { ascending: false });
-          if (phoneReports) {
-            phoneReports.forEach((r) => {
-              if (!allReports.some((existing) => existing.id === r.id)) {
-                allReports.push(r);
-              }
-            });
-          }
+      try {
+        const apiRes = await fetch("/api/patient/get-reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: targetPhone,
+            email: targetEmail,
+            userId: targetId,
+            name: targetName
+          })
+        });
+        const apiData = await apiRes.json();
+        if (apiData.ok && Array.isArray(apiData.reports)) {
+          allReports = apiData.reports;
         }
+      } catch (err) {
+        console.warn("Could not fetch reports from server API:", err);
       }
 
       setReports(allReports);
