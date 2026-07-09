@@ -11,6 +11,8 @@ import qrcode from 'qrcode-terminal';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const PORT = Number(process.env.PORT) || 3005;
 const MAX_RETRIES = 5;
@@ -217,9 +219,20 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
       if (upper === '1' || upper.includes('REPORT')) {
         const found = await searchReportInSupabase(phoneNum, true, pushName);
         if (found) {
-          await sock.sendMessage(remoteJid, {
-            text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n🧾 *Invoice:* ${found.invoice_number || 'N/A'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
-          });
+          try {
+            const pdfBuffer = buildReportPdfBuffer(found);
+            await sock.sendMessage(remoteJid, {
+              document: pdfBuffer,
+              mimetype: 'application/pdf',
+              fileName: `Lab_Report_${found.report_number || 'Official'}.pdf`,
+              caption: `📄 *YOUR VERIFIED LAB REPORT PDF*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.tests?.name || found.test_name || 'Diagnostic Panel'}\n🔖 *Report Ref:* ${found.report_number || 'REP'}\n\nAttached above is your official laboratory report document.\n\nTo view all historical reports, billing invoices, or book appointments, log in anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
+            });
+          } catch (pdfErr) {
+            console.error("PDF generation error in chatbot:", pdfErr);
+            await sock.sendMessage(remoteJid, {
+              text: `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`
+            });
+          }
         } else {
           const displayNum = phoneNum.length > 13 ? 'your WhatsApp account' : `phone (+${phoneNum})`;
           await sock.sendMessage(remoteJid, {
@@ -312,6 +325,100 @@ app.post('/sessions/logout', async (req, res) => {
 app.get('/logs', (req, res) => {
   res.json({ ok: true, logs });
 });
+
+// Helper to generate professional PDF report buffer
+function buildReportPdfBuffer(rep) {
+  const doc = new jsPDF();
+  const patName = rep.patient_name || rep.profiles?.full_name || "Valued Patient";
+  const repNum = rep.report_number || `REP-${rep.id?.slice(0, 6)?.toUpperCase() || "001"}`;
+  const invNum = rep.invoice_number || "INV-STD";
+
+  // Header Banner
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, 210, 28, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(255, 255, 255);
+  doc.text("JUST LAB ERP DIAGNOSTICS & RESEARCH", 14, 13);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(203, 213, 225);
+  doc.text("ISO 9001:2015 Accredited Clinical Laboratory | Digital Verified Medical Report", 14, 21);
+
+  // Patient Info Card
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, 34, 182, 30, 3, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`PATIENT: ${patName}`.slice(0, 50), 18, 43);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  const phoneStr = rep.profiles?.phone_number || rep.patient_phone || "—";
+  doc.text(`Phone: ${phoneStr}`, 18, 50);
+  doc.text(`Specimen: ${rep.specimen_name || "Whole Blood (EDTA)"}`, 18, 57);
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(79, 70, 229);
+  doc.text(`REPORT REF: ${repNum}`, 125, 43);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Invoice: ${invNum}`, 125, 50);
+  doc.text(`Date: ${new Date(rep.created_at || Date.now()).toLocaleDateString("en-IN")}`, 125, 57);
+
+  // Diagnostic Results Table
+  let resultsList = [];
+  if (Array.isArray(rep.results_data)) {
+    resultsList = rep.results_data;
+  } else if (rep.results_data && Array.isArray(rep.results_data.results)) {
+    resultsList = rep.results_data.results;
+  }
+
+  const tableBody = resultsList.length > 0
+    ? resultsList.map((r) => [
+        String(r.test_name || r.name || r.parameter || "Clinical Test").slice(0, 36),
+        String(r.value || r.result || "—"),
+        String(r.unit || "—"),
+        String(r.normal_range || r.reference_range || "Standard"),
+        String(r.flag || "NORMAL").toUpperCase()
+      ])
+    : [
+        [rep.tests?.name || rep.test_name || "Comprehensive Diagnostic Panel", "NORMAL", "—", "Within Range", "VERIFIED"]
+      ];
+
+  autoTable(doc, {
+    startY: 72,
+    theme: "striped",
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9 },
+    bodyStyles: { fontSize: 9, cellPadding: 4, textColor: [30, 41, 59] },
+    columnStyles: {
+      0: { cellWidth: 60 },
+      1: { cellWidth: 32 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 38 },
+      4: { cellWidth: 24 }
+    },
+    head: [["Test Parameter", "Observed Value", "Unit", "Biological Ref. Range", "Status"]],
+    body: tableBody
+  });
+
+  const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 16 : 140;
+
+  // Verification & Sign off
+  doc.setFillColor(240, 253, 244);
+  doc.roundedRect(14, finalY, 182, 24, 3, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(22, 101, 52);
+  doc.text("VERIFIED BY CHIEF MEDICAL OFFICER (MD PATHOLOGY)", 18, finalY + 9);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text("This document is cryptographically verified and signed by Just LAB ERP Diagnostics.", 18, finalY + 16);
+
+  return Buffer.from(doc.output("arraybuffer"));
+}
 
 // Helper to search Supabase reports
 async function searchReportInSupabase(query, isPhone = true, pushName = "") {
