@@ -324,24 +324,32 @@ async function searchReportInSupabase(query, isPhone = true, pushName = "") {
   const cleanPushName = String(pushName || "").trim().toLowerCase();
 
   try {
-    const endpoint = `${supaUrl}/rest/v1/reports?status=eq.published&order=created_at.desc&limit=100`;
+    const endpoint = `${supaUrl}/rest/v1/reports?select=*,profiles(*)&status=eq.published&order=created_at.desc&limit=100`;
     const res = await fetch(endpoint, {
       headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
     });
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
       for (const r of data) {
-        if (isPhone) {
-          const rPhone = r.patient_phone ? String(r.patient_phone).replace(/[^0-9]/g, "") : "";
-          if (last10.length >= 7 && rPhone.includes(last10)) return r;
+        const prof = r.profiles || {};
+        const rPhone = String(prof.phone_number || prof.phone || r.patient_phone || "").replace(/[^0-9]/g, "");
+        const rName = String(prof.full_name || r.patient_name || "").trim().toLowerCase();
 
-          const rName = r.patient_name ? String(r.patient_name).trim().toLowerCase() : "";
+        if (isPhone) {
+          if (last10.length >= 7 && rPhone.includes(last10)) {
+            r.patient_name = prof.full_name || r.patient_name || "Valued Patient";
+            return r;
+          }
+
           if (cleanPushName.length >= 3 && rName && (rName === cleanPushName || rName.includes(cleanPushName) || cleanPushName.includes(rName))) {
+            r.patient_name = prof.full_name || r.patient_name || "Valued Patient";
             return r;
           }
         } else {
-          const rName = r.patient_name ? String(r.patient_name).toLowerCase() : "";
-          if (cleanQuery.length >= 3 && (rName.includes(cleanQuery) || cleanQuery.includes(rName))) return r;
+          if (cleanQuery.length >= 3 && (rName.includes(cleanQuery) || cleanQuery.includes(rName))) {
+            r.patient_name = prof.full_name || r.patient_name || "Valued Patient";
+            return r;
+          }
         }
       }
     }

@@ -10,10 +10,10 @@ export async function POST(req: Request) {
 
     const supabase = createClient(supaUrl, supaKey);
 
-    // Fetch all published reports
+    // Fetch all published reports with joined profile data
     const { data: allPublished, error } = await supabase
       .from("reports")
-      .select("*, tests(*), test_groups(*), lab_branches(*)")
+      .select("*, profiles(*), tests(*), test_groups(*), lab_branches(*)")
       .eq("status", "published")
       .order("created_at", { ascending: false });
 
@@ -29,16 +29,18 @@ export async function POST(req: Request) {
       // 1. Match by patient_id
       if (userId && r.patient_id === userId) return true;
 
+      const prof = r.profiles || {};
+
       // 2. Match by phone (last 10 digits)
-      const rPhone = r.patient_phone ? String(r.patient_phone).replace(/[^0-9]/g, "").slice(-10) : "";
+      const rPhone = prof.phone_number ? String(prof.phone_number).replace(/[^0-9]/g, "").slice(-10) : "";
       if (cleanPhone && cleanPhone.length >= 10 && rPhone === cleanPhone) return true;
 
       // 3. Match by email
-      const rEmail = r.patient_email ? String(r.patient_email).trim().toLowerCase() : "";
+      const rEmail = prof.email ? String(prof.email).trim().toLowerCase() : "";
       if (cleanEmail && rEmail === cleanEmail) return true;
 
       // 4. Match by patient name
-      const rName = r.patient_name ? String(r.patient_name).trim().toLowerCase() : "";
+      const rName = prof.full_name ? String(prof.full_name).trim().toLowerCase() : "";
       if (cleanName && rName === cleanName) return true;
 
       return false;
