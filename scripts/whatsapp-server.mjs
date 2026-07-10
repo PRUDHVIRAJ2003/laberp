@@ -68,21 +68,40 @@ async function restoreCredsFromSupabase(branchId, authDir) {
       headers: { "apikey": supaKey, "Authorization": `Bearer ${supaKey}` }
     });
     const data = await res.json();
-    if (Array.isArray(data) && data[0]?.config?.creds) {
+    if (Array.isArray(data) && data[0]?.config) {
       if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
-      fs.writeFileSync(path.join(authDir, 'creds.json'), JSON.stringify(data[0].config.creds, null, 2), 'utf-8');
-      console.log(`☁️ [Branch: ${branchId}] Restored WhatsApp session from cloud storage!`);
+      const cfg = data[0].config;
+      if (cfg.keys && typeof cfg.keys === 'object') {
+        let count = 0;
+        for (const [filename, content] of Object.entries(cfg.keys)) {
+          fs.writeFileSync(path.join(authDir, filename), JSON.stringify(content, null, 2), 'utf-8');
+          count++;
+        }
+        console.log(`☁️ [Branch: ${branchId}] Restored FULL WhatsApp Signal auth state (${count} files) from cloud storage!`);
+      } else if (cfg.creds) {
+        fs.writeFileSync(path.join(authDir, 'creds.json'), JSON.stringify(cfg.creds, null, 2), 'utf-8');
+        console.log(`☁️ [Branch: ${branchId}] Restored creds.json from cloud storage!`);
+      }
     }
-  } catch (err) {}
+  } catch (err) {
+    console.warn(`[Cloud Restore Error] Branch "${branchId}":`, err.message);
+  }
 }
 
 async function saveCredsToSupabase(branchId, authDir) {
   try {
-    if (!supaUrl || !supaKey) return;
-    const credsPath = path.join(authDir, 'creds.json');
-    if (fs.existsSync(credsPath)) {
-      const credsRaw = fs.readFileSync(credsPath, 'utf-8');
-      const credsObj = JSON.parse(credsRaw);
+    if (!supaUrl || !supaKey || !fs.existsSync(authDir)) return;
+    const files = fs.readdirSync(authDir);
+    const allKeys = {};
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        try {
+          allKeys[file] = JSON.parse(fs.readFileSync(path.join(authDir, file), 'utf-8'));
+        } catch (e) {}
+      }
+    }
+
+    if (Object.keys(allKeys).length > 0) {
       await fetch(`${supaUrl}/rest/v1/branch_configurations`, {
         method: "POST",
         headers: {
@@ -93,7 +112,7 @@ async function saveCredsToSupabase(branchId, authDir) {
         },
         body: JSON.stringify({
           branch_id: `wa_session_${branchId}`,
-          config: { creds: credsObj },
+          config: { keys: allKeys, creds: allKeys['creds.json'] || null },
           updated_at: new Date().toISOString()
         })
       });
