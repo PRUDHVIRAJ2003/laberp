@@ -541,20 +541,28 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
   }
 
   try {
-    let digits = phone.replace(/[^0-9]/g, '').replace(/^0+/, '');
+    let digits = String(phone).replace(/[^0-9]/g, '').replace(/^0+/, '');
     if (digits.length === 10) {
       digits = '91' + digits;
+    }
+    if (digits.length === 12 && digits.startsWith('9191')) {
+      digits = digits.slice(2);
     }
 
     const jid = `${digits}@s.whatsapp.net`;
     let targetJid = jid;
     try {
       const waChecks = await sess.sock.onWhatsApp(jid);
-      if (Array.isArray(waChecks) && waChecks[0]?.exists) {
-        targetJid = waChecks[0].jid;
+      if (Array.isArray(waChecks) && waChecks.length > 0) {
+        if (waChecks[0].exists) {
+          targetJid = waChecks[0].jid;
+          console.log(`📱 [WhatsApp Check] Verified ${digits} is active on WhatsApp (${targetJid})`);
+        } else {
+          console.warn(`⚠️ [WhatsApp Check] Number ${digits} reported as not registered on WhatsApp servers.`);
+        }
       }
     } catch (checkErr) {
-      // Keep direct jid if WhatsApp check times out or drops IQ
+      console.warn(`⚠️ [WhatsApp Check Error]:`, checkErr.message);
     }
 
     try {
@@ -583,9 +591,9 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
       }
     }
 
-    console.log(`✅ [Branch: ${sess.branchName}] Sent message → ${digits}`);
-    addLog(branchId, sess.branchName, digits, 'SENT', message);
-    return res.json({ ok: true, sent: true, to: digits, branchUsed: sess.branchName });
+    console.log(`✅ [Branch: ${sess.branchName}] Successfully sent message → ${targetJid}`);
+    addLog(branchId, sess.branchName, digits, 'SENT', message || caption);
+    return res.json({ ok: true, sent: true, to: digits, targetJid, branchUsed: sess.branchName });
   } catch (err) {
     console.error(`❌ Send failed → ${phone}:`, err.message);
     addLog(branchId, sess?.branchName || branchName, phone, 'FAILED', message, err.message);
