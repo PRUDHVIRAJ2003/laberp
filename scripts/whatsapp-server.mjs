@@ -58,7 +58,8 @@ if (!sessions.has('default')) {
 
 // Supabase Cloud Session Persistence for Ephemeral Environments (Render / Docker)
 const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://htxafjkknkpgimykjifb.supabase.co";
-const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0eGFmamtrbmtwZ2lteWtqaWZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM1NjEwNCwiZXhwIjoyMDk4OTMyMTA0fQ.-6Iq96WcAFGCFLWt_KymBNME1mgOBaIRLeLaV86uosE";
+// Always use SERVICE_ROLE_KEY to bypass RLS policies on branch_configurations table
+const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0eGFmamtrbmtwZ2lteWtqaWZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM1NjEwNCwiZXhwIjoyMDk4OTMyMTA0fQ.-6Iq96WcAFGCFLWt_KymBNME1mgOBaIRLeLaV86uosE";
 
 async function restoreCredsFromSupabase(branchId, authDir) {
   try {
@@ -503,6 +504,17 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
     }
   }
 
+  // Auto-restore from Supabase cloud storage if session sat idle or container restarted
+  if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
+    console.log(`⚡ [Auto-Restore] No active session found. Restoring & reconnecting branch "${branchId}" on demand...`);
+    await connectBranch(branchId, branchName);
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 600));
+      sess = sessions.get(branchId) || sessions.get('default');
+      if (sess && sess.status === 'CONNECTED' && sess.sock) break;
+    }
+  }
+
   if (!sess || sess.status !== 'CONNECTED' || !sess.sock) {
     const err = 'No active WhatsApp session connected for this branch or default lab.';
     addLog(branchId, branchName, phone, 'FAILED', message || caption || 'PDF Document', err);
@@ -570,4 +582,14 @@ app.get('/health', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 LAB ERP Multi-Branch WhatsApp Gateway starting on port ${PORT}...\n`);
   connectBranch('default', 'Main Laboratory / Default');
+
+  // Keep-alive monitor: Every 3 minutes, check if sessions are disconnected and restore them automatically
+  setInterval(() => {
+    for (const [branchId, session] of sessions.entries()) {
+      if (session.status !== 'CONNECTED') {
+        console.log(`⏱️ [Keep-Alive] Branch "${branchId}" inactive. Restoring & reconnecting...`);
+        connectBranch(branchId, session.branchName);
+      }
+    }
+  }, 3 * 60 * 1000);
 });
