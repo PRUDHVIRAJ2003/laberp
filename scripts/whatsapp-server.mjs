@@ -151,6 +151,8 @@ async function connectBranch(branchId = 'default', branchName = 'Main Laboratory
     printQRInTerminal: false,
     auth: state,
     syncFullHistory: false,
+    markOnlineOnConnect: true,
+    generateHighQualityLinkPreview: true,
     browser: ['Just LAB ERP', 'Chrome', '124.0.0.0'],
     keepAliveIntervalMs: 25000,
     connectTimeoutMs: 60000,
@@ -551,6 +553,17 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
 
     // Always use standard @s.whatsapp.net JID so mobile app indexes and displays outgoing chat thread
     const targetJid = `${digits}@s.whatsapp.net`;
+
+    try {
+      const waChecks = await sess.sock.onWhatsApp(targetJid);
+      if (Array.isArray(waChecks) && waChecks.length > 0 && waChecks[0].exists === false) {
+        const errMsg = `Phone number +${digits} is not registered on WhatsApp.`;
+        console.warn(`❌ [Send Aborted] ${errMsg}`);
+        addLog(branchId, sess.branchName, digits, 'FAILED', message || caption || 'PDF Document', errMsg);
+        return res.status(404).json({ ok: false, error: errMsg });
+      }
+    } catch (checkErr) {}
+
     try {
       await sess.sock.presenceSubscribe(targetJid);
     } catch (presenceErr) {}
