@@ -549,21 +549,11 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
       digits = digits.slice(2);
     }
 
-    const jid = `${digits}@s.whatsapp.net`;
-    let targetJid = jid;
+    // Always use standard @s.whatsapp.net JID so mobile app indexes and displays outgoing chat thread
+    const targetJid = `${digits}@s.whatsapp.net`;
     try {
-      const waChecks = await sess.sock.onWhatsApp(jid);
-      if (Array.isArray(waChecks) && waChecks.length > 0) {
-        if (waChecks[0].exists) {
-          targetJid = waChecks[0].jid;
-          console.log(`📱 [WhatsApp Check] Verified ${digits} is active on WhatsApp (${targetJid})`);
-        } else {
-          console.warn(`⚠️ [WhatsApp Check] Number ${digits} reported as not registered on WhatsApp servers.`);
-        }
-      }
-    } catch (checkErr) {
-      console.warn(`⚠️ [WhatsApp Check Error]:`, checkErr.message);
-    }
+      await sess.sock.presenceSubscribe(targetJid);
+    } catch (presenceErr) {}
 
     try {
       if (pdfBase64) {
