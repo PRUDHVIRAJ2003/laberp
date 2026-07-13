@@ -205,20 +205,30 @@ client.on('disconnected', (reason) => {
 });
 
 // Interactive Chatbot
-client.on('message', async msg => {
+client.on('message_create', async msg => {
+    // Ignore status updates
     if (msg.from === 'status@broadcast') return;
 
     const text = msg.body.trim();
     const upper = text.toUpperCase();
-    const remoteJid = msg.from; // Usually formats as 918125752492@c.us
+    const remoteJid = msg.from;
     
-    // Normalize phone from ID
-    const phoneNum = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
-    const pushName = msg._data?.notifyName || '';
-    
-    console.log(`🤖 Received "${text}" from ${phoneNum} (${pushName})`);
+    // Normalize phone from ID (if fromMe is true, msg.to is the destination, msg.from is the sender)
+    // To support testing by texting yourself, we extract the phone number of the chat.
+    const chat = await msg.getChat();
+    let phoneNum = msg.from.split('@')[0].replace(/[^0-9]/g, '');
+    if (msg.fromMe) {
+        phoneNum = msg.to.split('@')[0].replace(/[^0-9]/g, '');
+    }
 
-    if (upper === '1' || upper.includes('REPORT')) {
+    const pushName = msg._data?.notifyName || '';
+
+    // Only respond to specific trigger words. If the bot sends a message containing these words
+    // (like "REPORT REF"), we don't want it to trigger itself and loop.
+    if (msg.fromMe && text.length > 15) return; 
+    
+    if (upper === '1' || upper === 'REPORT') {
+        console.log(`🤖 Received "1" or "REPORT" query for phone ${phoneNum}`);
         const found = await searchReportInSupabase(phoneNum, true, pushName);
         if (found) {
             try {
@@ -227,21 +237,21 @@ client.on('message', async msg => {
                 
                 const caption = `📄 *YOUR VERIFIED LAB REPORT PDF*\n\n👤 *Patient:* ${found.patient_name || (found.profiles && found.profiles.full_name) || 'Valued Patient'}\n📑 *Test:* ${(found.tests && found.tests.name) || found.test_name || 'Diagnostic Panel'}\n🔖 *Report Ref:* ${found.report_number || 'REP'}\n\nAttached above is your official laboratory report document.\n\nTo view all historical reports, billing invoices, or book appointments, log in anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*`;
                 
-                await client.sendMessage(remoteJid, media, { caption });
+                await msg.reply(media, null, { caption });
             } catch (pdfErr) {
                 console.error("PDF generation error in chatbot:", pdfErr);
-                await client.sendMessage(remoteJid, `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
+                await msg.reply(`📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
             }
         } else {
             const displayNum = phoneNum.length > 13 ? 'your WhatsApp account' : `phone (+${phoneNum})`;
-            await client.sendMessage(remoteJid, `🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to ${displayNum}.\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`);
+            await msg.reply(`🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to ${displayNum}.\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`);
         }
-    } else if (upper === '2' || upper.includes('INVOICE') || upper.includes('BILL')) {
-        await client.sendMessage(remoteJid, `🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`);
-    } else if (upper === '3' || upper.includes('BOOK') || upper.includes('APPOINTMENT')) {
-        await client.sendMessage(remoteJid, `🗓 *BOOK A NEW APPOINTMENT*\n\nWant to book a home sample collection or an in-lab test? Click below to reserve your slot instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
-    } else if (upper === '4' || upper.includes('SUPPORT') || upper.includes('HELP') || upper.includes('RECEPTION')) {
-        await client.sendMessage(remoteJid, `📞 *CUSTOMER SUPPORT*\n\nOur lab reception team is here to help!\n\n💬 Reply with your question here, or call us at +91 98765 43210 (Mon-Sat, 07:00 AM - 09:00 PM).\nEmail: help@laberp.vercel.app`);
+    } else if (upper === '2' || upper === 'INVOICE' || upper === 'BILL') {
+        await msg.reply(`🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`);
+    } else if (upper === '3' || upper === 'BOOK' || upper === 'APPOINTMENT') {
+        await msg.reply(`🗓 *BOOK A NEW APPOINTMENT*\n\nWant to book a home sample collection or an in-lab test? Click below to reserve your slot instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
+    } else if (upper === '4' || upper === 'SUPPORT' || upper === 'HELP' || upper === 'RECEPTION') {
+        await msg.reply(`📞 *CUSTOMER SUPPORT*\n\nOur lab reception team is here to help!\n\n💬 Reply with your question here, or call us at +91 98765 43210 (Mon-Sat, 07:00 AM - 09:00 PM).\nEmail: help@laberp.vercel.app`);
     }
 });
 
