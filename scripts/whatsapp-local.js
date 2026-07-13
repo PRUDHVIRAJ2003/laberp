@@ -184,6 +184,10 @@ client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
 });
 
+client.on('loading_screen', (percent, message) => {
+    console.log(`⏳ Loading WhatsApp Web: ${percent}% - ${message}`);
+});
+
 client.on('ready', () => {
     isConnected = true;
     console.log('\n✅ Local WhatsApp Gateway is READY and CONNECTED!');
