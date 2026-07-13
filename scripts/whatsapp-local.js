@@ -242,24 +242,24 @@ client.on('message_create', async msg => {
                 
                 const caption = `📄 *YOUR VERIFIED LAB REPORT PDF*\n\n👤 *Patient:* ${found.patient_name || (found.profiles && found.profiles.full_name) || 'Valued Patient'}\n📑 *Test:* ${(found.tests && found.tests.name) || found.test_name || 'Diagnostic Panel'}\n🔖 *Report Ref:* ${found.report_number || 'REP'}\n\nAttached above is your official laboratory report document.\n\nTo view all historical reports, billing invoices, or book appointments, log in anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*`;
                 
-                await client.sendMessage(remoteJid, media, { caption });
+                await chat.sendMessage(media, { caption });
             } catch (pdfErr) {
                 console.error("PDF generation error in chatbot:", pdfErr);
-                await client.sendMessage(remoteJid, `📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
+                await chat.sendMessage(`📄 *VERIFIED LAB REPORT FOUND*\n\n👤 *Patient:* ${found.patient_name || 'Valued Patient'}\n📑 *Test:* ${found.test_name || 'Diagnostic Panel'}\n🔖 *Report ID:* ${found.report_number || 'REP'}\n\nLogin securely to download your verified PDF report instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
             }
         } else {
             const displayNum = phoneNum.length > 13 ? 'your WhatsApp account' : `phone (+${phoneNum})`;
-            await client.sendMessage(remoteJid, `🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to ${displayNum}.\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`);
+            await chat.sendMessage(`🔒 *Medical Privacy Protection*\n\nWe could not find any published lab report linked directly to ${displayNum}.\n\nFor patient data privacy, reports can only be sent to the registered mobile number on file. If you registered under a different number or email, please log in securely via OTP:\n🔗 *https://laberp.vercel.app/patient*`);
         }
     } else if (upper === '2' || upper === 'INVOICE' || upper === 'BILL') {
-        await client.sendMessage(remoteJid, `🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`);
+        await chat.sendMessage(`🧾 *YOUR RECENT INVOICES & PAYMENTS*\n\nYou can inspect your billing receipts, payment status, and tax invoices anytime:\n🔗 *https://laberp.vercel.app/patient/dashboard*\n\n_Need help? Reply 4 to speak with our reception._`);
     } else if (upper === '3' || upper === 'BOOK' || upper === 'APPOINTMENT') {
-        await client.sendMessage(remoteJid, `🗓 *BOOK A NEW APPOINTMENT*\n\nWant to book a home sample collection or an in-lab test? Click below to reserve your slot instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
+        await chat.sendMessage(`🗓 *BOOK A NEW APPOINTMENT*\n\nWant to book a home sample collection or an in-lab test? Click below to reserve your slot instantly:\n🔗 *https://laberp.vercel.app/patient/dashboard*`);
     } else if (upper === '4' || upper === 'SUPPORT' || upper === 'HELP' || upper === 'RECEPTION') {
-        await client.sendMessage(remoteJid, `📞 *CUSTOMER SUPPORT*\n\nOur lab reception team is here to help!\n\n💬 Reply with your question here, or call us at +91 98765 43210 (Mon-Sat, 07:00 AM - 09:00 PM).\nEmail: help@laberp.vercel.app`);
+        await chat.sendMessage(`📞 *CUSTOMER SUPPORT*\n\nOur lab reception team is here to help!\n\n💬 Reply with your question here, or call us at +91 98765 43210 (Mon-Sat, 07:00 AM - 09:00 PM).\nEmail: help@laberp.vercel.app`);
     } else {
         // Fallback for "Hi", "Hello", or any unrecognized command
-        await client.sendMessage(remoteJid, `🏥 *LAB ERP DIAGNOSTIC & RESEARCH CENTER*\nAutomated 24/7 Patient Assistant\n\nHello! How can we assist you today?\n\nReply with a number:\n1️⃣ Download Latest Test Report (PDF)\n2️⃣ Check Invoices & Payment Status\n3️⃣ Book Home Sample Collection / Lab Visit\n4️⃣ Lab Location & Helpline Contact\n\n_Reply 1, 2, 3, or 4 at any time._`);
+        await chat.sendMessage(`🏥 *LAB ERP DIAGNOSTIC & RESEARCH CENTER*\nAutomated 24/7 Patient Assistant\n\nHello! How can we assist you today?\n\nReply with a number:\n1️⃣ Download Latest Test Report (PDF)\n2️⃣ Check Invoices & Payment Status\n3️⃣ Book Home Sample Collection / Lab Visit\n4️⃣ Lab Location & Helpline Contact\n\n_Reply 1, 2, 3, or 4 at any time._`);
     }
 });
 
