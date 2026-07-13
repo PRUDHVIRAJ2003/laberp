@@ -164,6 +164,7 @@ let isConnected = false;
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+    webVersionCache: { type: 'none' },
     puppeteer: { 
         headless: true,
         args: [
