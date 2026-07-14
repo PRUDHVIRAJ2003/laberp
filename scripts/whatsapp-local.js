@@ -276,6 +276,25 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
         }
         console.log(`   [TARGET] Number verified. Sending to JID: ${targetJid}`);
 
+        // THE BULLETPROOF 2026 FIX FOR UNSAVED CONTACTS:
+        // Even if isRegisteredUser is true, sending a message to a completely new contact 
+        // will silently fail (ACK 0) because WhatsApp Web requires the chat to be initialized 
+        // in its internal cache first to exchange encryption keys.
+        // We force WhatsApp to initialize the chat by calling its internal Store via Puppeteer.
+        console.log(`   [INIT] Priming WhatsApp internal chat cache...`);
+        try {
+            await client.pupPage.evaluate(async (jid) => {
+                if (window.Store && window.Store.Chat && window.Store.WidFactory) {
+                    const wid = window.Store.WidFactory.createWid(jid);
+                    await window.Store.Chat.find(wid);
+                }
+            }, targetJid);
+            // Give WhatsApp a brief moment to process the crypto keys
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
+        } catch (primeErr) {
+            console.warn(`   [INIT] Warning: Could not prime chat cache (might already exist).`);
+        }
+
         // Step 2: Send the message
         let sentMsg;
         if (pdfBase64) {
