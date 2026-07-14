@@ -584,9 +584,24 @@ export async function POST(req: NextRequest) {
 
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-      if ((status === "completed" || status === "published") && patient_phone) {
-        const msg = `🎉 *LAB REPORT READY*\n\nHello *${patient_name || "Patient"}*,\nYour lab test report *[${data.report_number || "Report"}]* is now **${status.toUpperCase()}**!\n\nAll clinical parameters have been analyzed. Login to your Patient Portal to view your complete diagnostic results and download your official PDF report.`;
-        await sendWhatsAppAlert(patient_phone, msg);
+      if (patient_phone) {
+        // Build a dynamic message based on what exactly was updated
+        let updateMsg = `🔔 *LAB REPORT UPDATE*\n\nHello *${patient_name || "Patient"}*,\nThere is an update on your lab test *[${data.report_number || "Report"}]*.`;
+        
+        if (sample_status && status !== "published" && status !== "completed") {
+            const friendlySampleStatus = sample_status.replace('_', ' ').toUpperCase();
+            updateMsg += `\n\n📍 *Sample Tracking*: Your specimen is currently **${friendlySampleStatus}**.`;
+        }
+        
+        if (status === "processing") {
+            updateMsg += `\n🔬 *Analysis*: Your report is now under active laboratory analysis.`;
+        } else if (status === "completed" || status === "published") {
+            updateMsg = `🎉 *LAB REPORT READY*\n\nHello *${patient_name || "Patient"}*,\nYour lab test report *[${data.report_number || "Report"}]* is now **${status.toUpperCase()}**!\n\nAll clinical parameters have been analyzed. Login to your Patient Portal to view your complete diagnostic results and download your official PDF report.`;
+        }
+        
+        updateMsg += `\n\nTrack realtime progress here:\n🔗 *https://laberp.vercel.app/patient/dashboard*`;
+        
+        await sendWhatsAppAlert(patient_phone, updateMsg);
       }
 
       return NextResponse.json({ success: true, report: data });
