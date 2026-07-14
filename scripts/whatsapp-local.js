@@ -116,9 +116,13 @@ async function fetchLatestReportFromDatabase(phoneNum) {
     
     if (Array.isArray(data)) {
       for (const rep of data) {
-        // Match the phone number
-        if (rep.profiles && String(rep.profiles.phone_number || "").includes(cleanNum)) return rep;
-        if (String(rep.patient_phone || "").includes(cleanNum)) return rep;
+        // Strip non-digits from DB phone numbers so formatting (e.g. +91 888-888) matches perfectly
+        const dbPhone1 = String((rep.profiles && rep.profiles.phone_number) || "").replace(/[^0-9]/g, "");
+        const dbPhone2 = String(rep.patient_phone || "").replace(/[^0-9]/g, "");
+        
+        if (dbPhone1.includes(cleanNum) || dbPhone2.includes(cleanNum)) {
+            return rep;
+        }
       }
     }
     return null;
@@ -247,7 +251,6 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
     const { phone, message, pdfBase64, filename, caption } = req.body;
 
     if (!phone) return res.status(400).json({ ok: false, error: 'Phone field is required.' });
-    if (!isConnected) return res.status(503).json({ ok: false, error: 'Local WhatsApp gateway not ready.' });
 
     try {
         let digits = String(phone).replace(/[^0-9]/g, '').replace(/^0+/, '');

@@ -708,8 +708,12 @@ export async function POST(req: NextRequest) {
       );
 
       const caption = `📑 *LAB REPORT DISPATCH*\n\nHello *${patient_name || "Patient"}*,\nPlease find attached your official diagnostic report PDF document for *[${report_number || "Report"}]* (${test_name || "Test Panel"}).\n\n📌 *Status*: ${status ? status.toUpperCase() : "PUBLISHED"}\n✍️ *Authorized By*: ${signed_by || "Chief Pathologist"}`;
-      await sendWhatsAppPdfAlert(patient_phone, pdfBuffer.toString("base64"), `Lab_Report_${report_number || "REP"}.pdf`, caption);
-      await sendWhatsAppAlert(patient_phone, caption);
+      const pdfSent = await sendWhatsAppPdfAlert(patient_phone, pdfBuffer.toString("base64"), `Lab_Report_${report_number || "REP"}.pdf`, caption);
+      const textSent = await sendWhatsAppAlert(patient_phone, caption);
+
+      if (!pdfSent && !textSent) {
+          return NextResponse.json({ error: "Failed to dispatch PDF via WhatsApp Gateway." }, { status: 500 });
+      }
 
       return NextResponse.json({ success: true, message: "WhatsApp PDF report alert sent successfully!" });
     } else if (action === "notify_email") {
