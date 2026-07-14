@@ -17,7 +17,7 @@ export default function WhatsAppGatewayPage() {
   const [sendingTest, setSendingTest] = useState(false);
 
   const supabase = createClient();
-  const GATEWAY_URL = process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
+  const GATEWAY_URL = process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "http://localhost:3005";
 
   useEffect(() => {
     fetchBranchesAndUser();

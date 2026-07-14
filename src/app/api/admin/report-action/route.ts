@@ -407,7 +407,7 @@ export async function POST(req: NextRequest) {
       try {
         if (!phone) return false;
         const phoneToUse = phone.includes("@") ? "+919876543210" : phone;
-        const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
+        const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "http://localhost:3005";
         const res = await fetch(`${baseUrl}/send-message`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -430,7 +430,7 @@ export async function POST(req: NextRequest) {
       try {
         if (!phone) return false;
         const phoneToUse = phone.includes("@") ? "+919876543210" : phone;
-        const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
+        const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "http://localhost:3005";
         const res = await fetch(`${baseUrl}/send-pdf`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
