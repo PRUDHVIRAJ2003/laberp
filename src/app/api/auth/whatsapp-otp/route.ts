@@ -19,10 +19,10 @@ function normalizePhone(raw: string): string {
   return digits;
 }
 
-// ─── Send WhatsApp via Baileys Gateway ───────────────────────────
+// ─── Send WhatsApp via Local Express Gateway ───────────────────────────
 async function sendWhatsApp(phone: string, message: string): Promise<{ sent: boolean; error?: string }> {
   // Base URL only — NO trailing path (the endpoint is /send-message)
-  const baseUrl = process.env.BAILEYS_SERVICE_URL || process.env.WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
+  const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "http://localhost:3005";
 
   try {
     const res = await fetch(`${baseUrl}/send-message`, {

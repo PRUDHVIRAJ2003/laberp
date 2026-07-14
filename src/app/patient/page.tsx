@@ -331,7 +331,7 @@ export default function PatientPortal() {
                         onChange={() => setVerifyOption("whatsapp")}
                         style={{ accentColor: "var(--google-green)" }}
                       />
-                      💬 WhatsApp OTP (Baileys)
+                      💬 WhatsApp OTP
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: "14px", fontWeight: 500 }}>
                       <input

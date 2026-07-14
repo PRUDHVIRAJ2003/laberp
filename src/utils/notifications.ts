@@ -15,10 +15,10 @@ export async function sendRegistrationNotifications({
 }) {
   const results = { whatsapp: false, email: false };
 
-  // 1. Send WhatsApp Notification via Local Baileys Gateway (Port 3005)
+  // 1. Send WhatsApp Notification via Local WhatsApp Gateway (Port 3005)
   if (phone) {
     try {
-      const baseUrl = process.env.BAILEYS_SERVICE_URL || process.env.WHATSAPP_SERVER_URL || "https://laberp.onrender.com";
+      const baseUrl = process.env.WHATSAPP_SERVER_URL || process.env.NEXT_PUBLIC_WHATSAPP_SERVER_URL || "http://localhost:3005";
       const message = `🎉 *Welcome to LAB ERP, ${name}!*\n\nYour clinical patient registration is complete. You can now access your diagnostic test reports, lab results, and medical history anytime via our secure Patient Portal:\n🌐 ${portalUrl}\n\nIf you have any questions, please contact your nearest lab branch. Stay healthy!`;
 
       const res = await fetch(`${baseUrl}/send-message`, {
