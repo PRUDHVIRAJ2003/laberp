@@ -268,16 +268,13 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
             return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
 
-        // CRITICAL FIX: Always use phone@c.us format for sending!
-        // getNumberId may return @lid (Linked ID) on multi-device accounts,
-        // but messages sent to @lid are silently dropped by WhatsApp.
-        // Extract the real user number from contactId, or fall back to our digits.
-        let sendDigits = digits;
-        if (contactId.user && /^\d+$/.test(contactId.user)) {
-            sendDigits = contactId.user;
-        }
-        const targetJid = `${sendDigits}@c.us`;
-        console.log(`   [TARGET] Sending to JID: ${targetJid} (bypassing @lid)`);
+        // CRITICAL FIX: Always use the ORIGINAL PHONE NUMBER with @c.us!
+        // getNumberId on multi-device accounts returns { server: "lid", user: "1215626793139" }
+        // where "user" is an internal LID, NOT the phone number.
+        // Sending to either LID@lid or LID@c.us both fail.
+        // The ONLY format that works is: originalPhoneDigits@c.us
+        const targetJid = `${digits}@c.us`;
+        console.log(`   [TARGET] Sending to JID: ${targetJid}`);
 
         // Step 2: Send the message
         let sentMsg;
