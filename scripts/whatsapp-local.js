@@ -259,25 +259,25 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
 
         console.log(`\n📤 [SEND] Starting send to +${digits}...`);
 
-        // STEP 1: RESOLVE THE LID (Linked ID)
-        // In 2026, WhatsApp requires LIDs for unsaved contacts.
-        const contactId = await client.getNumberId(digits).catch(() => null);
-        console.log(`   [LOOKUP] getNumberId result:`, contactId ? JSON.stringify(contactId) : 'NULL (not on WhatsApp)');
+        // Standard JID format (DO NOT USE @lid directly for sending!)
+        const targetJid = `${digits}@c.us`;
 
-        if (!contactId) {
+        // 1. Verify Registration
+        const isRegistered = await client.isRegisteredUser(targetJid).catch(() => false);
+        if (!isRegistered) {
             console.error(`❌ [ABORT] +${digits} is NOT registered on WhatsApp.`);
             return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
-
-        // STEP 2: GET THE CHAT USING THE RESOLVED IDENTIFIER
-        // We MUST use the _serialized ID (which could be an @lid) to find the chat properly
-        const resolvedJid = contactId._serialized;
-        console.log(`   [TARGET] Resolved to JID/LID: ${resolvedJid}`);
+        console.log(`   [TARGET] Number verified as registered.`);
 
         let sentMsg;
         try {
-            console.log(`   [INIT] Attempting to initialize chat via getChatById...`);
-            const chat = await client.getChatById(resolvedJid);
+            // 2. The 2026 Community Workaround for "ACK 0" on new contacts:
+            // We must retrieve the Contact object first, then ask it to initialize the Chat.
+            // This triggers the internal WhatsApp Web handshake correctly.
+            console.log(`   [INIT] Fetching Contact and initializing Chat handshake...`);
+            const contact = await client.getContactById(targetJid);
+            const chat = await contact.getChat();
             
             if (pdfBase64) {
                 const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
@@ -285,24 +285,24 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
             } else {
                 sentMsg = await chat.sendMessage(message);
             }
-            console.log(`✅ [DELIVERED via Chat API] Message sent!`);
-            
-        } catch (chatErr) {
-            console.warn(`   [WARNING] getChatById failed: ${chatErr.message}. Falling back to direct sendMessage...`);
+            console.log(`✅ [DELIVERED via contact.getChat()] Message sent!`);
+
+        } catch (initErr) {
+            console.warn(`   [WARNING] Handshake failed: ${initErr.message}. Falling back to direct send...`);
             
             if (pdfBase64) {
                 const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-                sentMsg = await client.sendMessage(resolvedJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+                sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
             } else {
-                sentMsg = await client.sendMessage(resolvedJid, message);
+                sentMsg = await client.sendMessage(targetJid, message);
             }
-            console.log(`✅ [DELIVERED via Direct API] Message sent!`);
+            console.log(`✅ [DELIVERED via Direct Send] Message sent!`);
         }
 
         const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
         console.log(`   [ACK STATUS] MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
         
-        return res.json({ ok: true, sent: true, to: digits, targetJid: resolvedJid, messageId: msgId });
+        return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
     } catch (err) {
         console.error(`❌ [ERROR] Send failed to ${phone}:`, err.message);
         console.error(`   Stack:`, err.stack?.split('\n').slice(0, 3).join('\n'));
