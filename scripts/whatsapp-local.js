@@ -8,6 +8,7 @@ const qrcode = require('qrcode-terminal');
 const express = require('express');
 const { jsPDF } = require('jspdf');
 const autoTable = require('jspdf-autotable');
+const path = require('path');
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────
 const PORT = 3005;
