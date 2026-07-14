@@ -257,24 +257,45 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
         if (digits.length === 10) digits = '91' + digits;
         if (digits.length === 12 && digits.startsWith('9191')) digits = digits.slice(2);
 
-        // 1. Resolve number to fetch cryptographic keys for unsaved contacts!
+        console.log(`\n📤 [SEND] Starting send to +${digits}...`);
+
+        // Step 1: Verify the number exists on WhatsApp
         const contactId = await client.getNumberId(digits).catch(() => null);
-        const targetJid = contactId ? contactId._serialized : `${digits}@c.us`;
+        console.log(`   [LOOKUP] getNumberId result:`, contactId ? JSON.stringify(contactId) : 'NULL (not on WhatsApp)');
 
         if (!contactId) {
-            console.warn(`⚠️ [Warning] WhatsApp could not resolve +${digits} in contacts. Attempting raw send...`);
-        }
-        if (pdfBase64) {
-            const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-            await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-        } else {
-            await client.sendMessage(targetJid, message);
+            console.error(`❌ [ABORT] +${digits} is NOT registered on WhatsApp.`);
+            return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
 
-        console.log(`✅ Automatically Sent API message to ${digits}`);
-        return res.json({ ok: true, sent: true, to: digits, targetJid });
+        // CRITICAL FIX: Always use phone@c.us format for sending!
+        // getNumberId may return @lid (Linked ID) on multi-device accounts,
+        // but messages sent to @lid are silently dropped by WhatsApp.
+        // Extract the real user number from contactId, or fall back to our digits.
+        let sendDigits = digits;
+        if (contactId.user && /^\d+$/.test(contactId.user)) {
+            sendDigits = contactId.user;
+        }
+        const targetJid = `${sendDigits}@c.us`;
+        console.log(`   [TARGET] Sending to JID: ${targetJid} (bypassing @lid)`);
+
+        // Step 2: Send the message
+        let sentMsg;
+        if (pdfBase64) {
+            const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+            sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+        } else {
+            sentMsg = await client.sendMessage(targetJid, message);
+        }
+
+        // Step 3: Log delivery details
+        const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
+        console.log(`✅ [DELIVERED] Message sent to +${sendDigits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
+        
+        return res.json({ ok: true, sent: true, to: sendDigits, targetJid, messageId: msgId });
     } catch (err) {
-        console.error(`❌ Send API failed to ${phone}:`, err.message);
+        console.error(`❌ [ERROR] Send failed to ${phone}:`, err.message);
+        console.error(`   Stack:`, err.stack?.split('\n').slice(0, 3).join('\n'));
         return res.status(500).json({ ok: false, error: err.message });
     }
 });
