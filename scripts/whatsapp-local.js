@@ -132,24 +132,28 @@ async function fetchLatestReportFromDatabase(phoneNum) {
   }
 }
 
-// ─── WHATSAPP CLIENT INITIALIZATION ─────────────────────────────────
-let isConnected = false;
-
+// =======================================================
+// WHATSAPP WEB JS INITIALIZATION
+// Using the WineShop_ERP stable configuration
+// =======================================================
 const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
-    webVersionCache: { type: 'none' }, // Fixes the 99% loading bug permanently
-    puppeteer: { 
+    authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '..', '.wwebjs_auth') }),
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+    },
+    puppeteer: {
         headless: true,
         args: [
-          '--no-sandbox', 
-          '--disable-setuid-sandbox', 
-          '--disable-dev-shm-usage', 
-          '--disable-accelerated-2d-canvas', 
-          '--no-first-run', 
-          '--no-zygote', 
-          '--single-process', 
-          '--disable-gpu'
-        ] 
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process', 
+            '--disable-gpu'
+        ]
     }
 });
 
@@ -259,50 +263,21 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
 
         console.log(`\n📤 [SEND] Starting send to +${digits}...`);
 
-        // Standard JID format. WE MUST NOT USE LID FOR UNSAVED CONTACTS!
+        // Standard JID format (whatsapp-web.js standard)
         const targetJid = `${digits}@c.us`;
 
-        // 1. Verify Registration (This safely checks WhatsApp servers without corrupting the local LID cache)
-        const isRegistered = await client.isRegisteredUser(targetJid).catch(() => false);
-        if (!isRegistered) {
-            console.error(`❌ [ABORT] +${digits} is NOT registered on WhatsApp.`);
-            return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
-        }
-        console.log(`   [TARGET] Number verified as registered: ${targetJid}`);
-
+        // We use the direct client.sendMessage since the webVersionCache 
+        // bypasses the 2026 LID bugs completely.
         let sentMsg;
-        try {
-            // 2. The 2026 Community Workaround for "ACK 0" on new contacts:
-            // We use the @c.us JID to retrieve the Contact object first, then ask it to initialize the Chat.
-            // This triggers the internal WhatsApp Web crypto handshake correctly, bypassing the LID bug.
-            console.log(`   [INIT] Fetching Contact object for ${targetJid}...`);
-            const contact = await client.getContactById(targetJid);
-            
-            console.log(`   [INIT] Initializing Chat handshake...`);
-            const chat = await contact.getChat();
-            
-            if (pdfBase64) {
-                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-                sentMsg = await chat.sendMessage(media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-            } else {
-                sentMsg = await chat.sendMessage(message);
-            }
-            console.log(`✅ [DELIVERED via contact.getChat()] Message sent!`);
-
-        } catch (initErr) {
-            console.warn(`   [WARNING] Handshake failed: ${initErr.message}. Falling back to direct send...`);
-            
-            if (pdfBase64) {
-                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-                sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-            } else {
-                sentMsg = await client.sendMessage(targetJid, message);
-            }
-            console.log(`✅ [DELIVERED via Direct Send] Message sent!`);
+        if (pdfBase64) {
+            const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+            sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+        } else {
+            sentMsg = await client.sendMessage(targetJid, message);
         }
 
         const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
-        console.log(`   [ACK STATUS] MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
+        console.log(`✅ [DELIVERED] Message sent to +${digits} | MsgID: ${msgId}`);
         
         return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
     } catch (err) {
