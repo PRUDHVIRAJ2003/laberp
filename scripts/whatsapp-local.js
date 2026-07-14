@@ -259,24 +259,26 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
 
         console.log(`\n📤 [SEND] Starting send to +${digits}...`);
 
-        // Standard JID format (DO NOT USE @lid directly for sending!)
+        // Standard JID format. WE MUST NOT USE LID FOR UNSAVED CONTACTS!
         const targetJid = `${digits}@c.us`;
 
-        // 1. Verify Registration
+        // 1. Verify Registration (This safely checks WhatsApp servers without corrupting the local LID cache)
         const isRegistered = await client.isRegisteredUser(targetJid).catch(() => false);
         if (!isRegistered) {
             console.error(`❌ [ABORT] +${digits} is NOT registered on WhatsApp.`);
             return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
-        console.log(`   [TARGET] Number verified as registered.`);
+        console.log(`   [TARGET] Number verified as registered: ${targetJid}`);
 
         let sentMsg;
         try {
             // 2. The 2026 Community Workaround for "ACK 0" on new contacts:
-            // We must retrieve the Contact object first, then ask it to initialize the Chat.
-            // This triggers the internal WhatsApp Web handshake correctly.
-            console.log(`   [INIT] Fetching Contact and initializing Chat handshake...`);
+            // We use the @c.us JID to retrieve the Contact object first, then ask it to initialize the Chat.
+            // This triggers the internal WhatsApp Web crypto handshake correctly, bypassing the LID bug.
+            console.log(`   [INIT] Fetching Contact object for ${targetJid}...`);
             const contact = await client.getContactById(targetJid);
+            
+            console.log(`   [INIT] Initializing Chat handshake...`);
             const chat = await contact.getChat();
             
             if (pdfBase64) {
