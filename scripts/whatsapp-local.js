@@ -287,9 +287,9 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
 
         // Step 3: Log delivery details
         const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
-        console.log(`✅ [DELIVERED] Message sent to +${sendDigits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
+        console.log(`✅ [DELIVERED] Message sent to +${digits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
         
-        return res.json({ ok: true, sent: true, to: sendDigits, targetJid, messageId: msgId });
+        return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
     } catch (err) {
         console.error(`❌ [ERROR] Send failed to ${phone}:`, err.message);
         console.error(`   Stack:`, err.stack?.split('\n').slice(0, 3).join('\n'));
