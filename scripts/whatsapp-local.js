@@ -258,57 +258,51 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
         if (digits.length === 12 && digits.startsWith('9191')) digits = digits.slice(2);
 
         console.log(`\n📤 [SEND] Starting send to +${digits}...`);
-        const targetJid = `${digits}@c.us`;
 
-        // CRITICAL FIX FOR 2026 WHATSAPP WEB LID PROTOCOL:
-        // Do NOT use getNumberId() or getChatById() for new contacts!
-        // They force WhatsApp to resolve the contact to an internal LID (Linked ID),
-        // which causes subsequent sends to fail with "No LID for user" or silently drop (ACK: 0).
-        // Instead, we use isRegisteredUser(). This forces WhatsApp's servers to lookup the phone number
-        // and exchange cryptographic keys via the standard JID protocol, without triggering the LID bug.
-        
-        console.log(`   [LOOKUP] Verifying registration for ${targetJid}...`);
-        const isRegistered = await client.isRegisteredUser(targetJid).catch(() => false);
-        
-        if (!isRegistered) {
+        // STEP 1: RESOLVE THE LID (Linked ID)
+        // In 2026, WhatsApp requires LIDs for unsaved contacts.
+        const contactId = await client.getNumberId(digits).catch(() => null);
+        console.log(`   [LOOKUP] getNumberId result:`, contactId ? JSON.stringify(contactId) : 'NULL (not on WhatsApp)');
+
+        if (!contactId) {
             console.error(`❌ [ABORT] +${digits} is NOT registered on WhatsApp.`);
             return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
-        console.log(`   [TARGET] Number verified. Sending to JID: ${targetJid}`);
 
-        // THE BULLETPROOF 2026 FIX FOR UNSAVED CONTACTS:
-        // Even if isRegisteredUser is true, sending a message to a completely new contact 
-        // will silently fail (ACK 0) because WhatsApp Web requires the chat to be initialized 
-        // in its internal cache first to exchange encryption keys.
-        // We force WhatsApp to initialize the chat by calling its internal Store via Puppeteer.
-        console.log(`   [INIT] Priming WhatsApp internal chat cache...`);
-        try {
-            await client.pupPage.evaluate(async (jid) => {
-                if (window.Store && window.Store.Chat && window.Store.WidFactory) {
-                    const wid = window.Store.WidFactory.createWid(jid);
-                    await window.Store.Chat.find(wid);
-                }
-            }, targetJid);
-            // Give WhatsApp a brief moment to process the crypto keys
-            await new Promise(resolve => setTimeout(resolve, 1500)); 
-        } catch (primeErr) {
-            console.warn(`   [INIT] Warning: Could not prime chat cache (might already exist).`);
-        }
+        // STEP 2: GET THE CHAT USING THE RESOLVED IDENTIFIER
+        // We MUST use the _serialized ID (which could be an @lid) to find the chat properly
+        const resolvedJid = contactId._serialized;
+        console.log(`   [TARGET] Resolved to JID/LID: ${resolvedJid}`);
 
-        // Step 2: Send the message
         let sentMsg;
-        if (pdfBase64) {
-            const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-            sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-        } else {
-            sentMsg = await client.sendMessage(targetJid, message);
+        try {
+            console.log(`   [INIT] Attempting to initialize chat via getChatById...`);
+            const chat = await client.getChatById(resolvedJid);
+            
+            if (pdfBase64) {
+                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+                sentMsg = await chat.sendMessage(media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+            } else {
+                sentMsg = await chat.sendMessage(message);
+            }
+            console.log(`✅ [DELIVERED via Chat API] Message sent!`);
+            
+        } catch (chatErr) {
+            console.warn(`   [WARNING] getChatById failed: ${chatErr.message}. Falling back to direct sendMessage...`);
+            
+            if (pdfBase64) {
+                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+                sentMsg = await client.sendMessage(resolvedJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+            } else {
+                sentMsg = await client.sendMessage(resolvedJid, message);
+            }
+            console.log(`✅ [DELIVERED via Direct API] Message sent!`);
         }
 
-        // Step 3: Log delivery details
         const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
-        console.log(`✅ [DELIVERED] Message sent to +${digits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
+        console.log(`   [ACK STATUS] MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
         
-        return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
+        return res.json({ ok: true, sent: true, to: digits, targetJid: resolvedJid, messageId: msgId });
     } catch (err) {
         console.error(`❌ [ERROR] Send failed to ${phone}:`, err.message);
         console.error(`   Stack:`, err.stack?.split('\n').slice(0, 3).join('\n'));
