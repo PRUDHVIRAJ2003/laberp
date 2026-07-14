@@ -258,55 +258,38 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
         if (digits.length === 12 && digits.startsWith('9191')) digits = digits.slice(2);
 
         console.log(`\n📤 [SEND] Starting send to +${digits}...`);
+        const targetJid = `${digits}@c.us`;
 
-        // Step 1: Verify the number exists on WhatsApp
-        const contactId = await client.getNumberId(digits).catch(() => null);
-        console.log(`   [LOOKUP] getNumberId result:`, contactId ? JSON.stringify(contactId) : 'NULL (not on WhatsApp)');
-
-        if (!contactId) {
+        // CRITICAL FIX FOR 2026 WHATSAPP WEB LID PROTOCOL:
+        // Do NOT use getNumberId() or getChatById() for new contacts!
+        // They force WhatsApp to resolve the contact to an internal LID (Linked ID),
+        // which causes subsequent sends to fail with "No LID for user" or silently drop (ACK: 0).
+        // Instead, we use isRegisteredUser(). This forces WhatsApp's servers to lookup the phone number
+        // and exchange cryptographic keys via the standard JID protocol, without triggering the LID bug.
+        
+        console.log(`   [LOOKUP] Verifying registration for ${targetJid}...`);
+        const isRegistered = await client.isRegisteredUser(targetJid).catch(() => false);
+        
+        if (!isRegistered) {
             console.error(`❌ [ABORT] +${digits} is NOT registered on WhatsApp.`);
             return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
+        console.log(`   [TARGET] Number verified. Sending to JID: ${targetJid}`);
 
-        const targetJid = `${digits}@c.us`;
-        console.log(`   [TARGET] Sending to JID: ${targetJid}`);
-
-        // Step 2: Force-create chat session to fetch encryption keys for new contacts
-        // This is the critical step that makes it work for contacts you've never chatted with!
-        try {
-            const chat = await client.getChatById(targetJid);
-            console.log(`   [CHAT] Chat resolved: ${chat.name || chat.id._serialized}`);
-            
-            // Send THROUGH the chat object (not client.sendMessage) for reliable delivery
-            let sentMsg;
-            if (pdfBase64) {
-                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-                sentMsg = await chat.sendMessage(media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-            } else {
-                sentMsg = await chat.sendMessage(message);
-            }
-
-            const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
-            console.log(`✅ [DELIVERED via Chat] Message to +${digits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
-            return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
-
-        } catch (chatErr) {
-            console.warn(`   [CHAT] getChatById failed: ${chatErr.message}. Trying direct sendMessage...`);
-            
-            // Fallback: direct sendMessage (works for saved contacts)
-            let sentMsg;
-            if (pdfBase64) {
-                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-                sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-            } else {
-                sentMsg = await client.sendMessage(targetJid, message);
-            }
-
-            const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
-            console.log(`✅ [DELIVERED via Direct] Message to +${digits} | MsgID: ${msgId}`);
-            return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
+        // Step 2: Send the message
+        let sentMsg;
+        if (pdfBase64) {
+            const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+            sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+        } else {
+            sentMsg = await client.sendMessage(targetJid, message);
         }
 
+        // Step 3: Log delivery details
+        const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
+        console.log(`✅ [DELIVERED] Message sent to +${digits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
+        
+        return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
     } catch (err) {
         console.error(`❌ [ERROR] Send failed to ${phone}:`, err.message);
         console.error(`   Stack:`, err.stack?.split('\n').slice(0, 3).join('\n'));
