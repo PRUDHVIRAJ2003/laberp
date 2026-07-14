@@ -268,28 +268,45 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
             return res.status(404).json({ ok: false, error: `+${digits} is not a registered WhatsApp number.` });
         }
 
-        // CRITICAL FIX: Always use the ORIGINAL PHONE NUMBER with @c.us!
-        // getNumberId on multi-device accounts returns { server: "lid", user: "1215626793139" }
-        // where "user" is an internal LID, NOT the phone number.
-        // Sending to either LID@lid or LID@c.us both fail.
-        // The ONLY format that works is: originalPhoneDigits@c.us
         const targetJid = `${digits}@c.us`;
         console.log(`   [TARGET] Sending to JID: ${targetJid}`);
 
-        // Step 2: Send the message
-        let sentMsg;
-        if (pdfBase64) {
-            const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
-            sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
-        } else {
-            sentMsg = await client.sendMessage(targetJid, message);
+        // Step 2: Force-create chat session to fetch encryption keys for new contacts
+        // This is the critical step that makes it work for contacts you've never chatted with!
+        try {
+            const chat = await client.getChatById(targetJid);
+            console.log(`   [CHAT] Chat resolved: ${chat.name || chat.id._serialized}`);
+            
+            // Send THROUGH the chat object (not client.sendMessage) for reliable delivery
+            let sentMsg;
+            if (pdfBase64) {
+                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+                sentMsg = await chat.sendMessage(media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+            } else {
+                sentMsg = await chat.sendMessage(message);
+            }
+
+            const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
+            console.log(`✅ [DELIVERED via Chat] Message to +${digits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
+            return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
+
+        } catch (chatErr) {
+            console.warn(`   [CHAT] getChatById failed: ${chatErr.message}. Trying direct sendMessage...`);
+            
+            // Fallback: direct sendMessage (works for saved contacts)
+            let sentMsg;
+            if (pdfBase64) {
+                const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
+                sentMsg = await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
+            } else {
+                sentMsg = await client.sendMessage(targetJid, message);
+            }
+
+            const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
+            console.log(`✅ [DELIVERED via Direct] Message to +${digits} | MsgID: ${msgId}`);
+            return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
         }
 
-        // Step 3: Log delivery details
-        const msgId = sentMsg && sentMsg.id ? sentMsg.id._serialized || sentMsg.id.id : 'unknown';
-        console.log(`✅ [DELIVERED] Message sent to +${digits} | MsgID: ${msgId} | ACK: ${sentMsg ? sentMsg.ack : 'N/A'}`);
-        
-        return res.json({ ok: true, sent: true, to: digits, targetJid, messageId: msgId });
     } catch (err) {
         console.error(`❌ [ERROR] Send failed to ${phone}:`, err.message);
         console.error(`   Stack:`, err.stack?.split('\n').slice(0, 3).join('\n'));
