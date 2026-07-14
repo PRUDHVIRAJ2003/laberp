@@ -257,10 +257,13 @@ app.post(['/send-message', '/send', '/send-pdf'], async (req, res) => {
         if (digits.length === 10) digits = '91' + digits;
         if (digits.length === 12 && digits.startsWith('9191')) digits = digits.slice(2);
 
-        // Format exactly as required by whatsapp-web.js
-        const targetJid = `${digits}@c.us`;
+        // 1. Resolve number to fetch cryptographic keys for unsaved contacts!
+        const contactId = await client.getNumberId(digits).catch(() => null);
+        const targetJid = contactId ? contactId._serialized : `${digits}@c.us`;
 
-        // Attempt sending immediately (bypass isRegisteredUser check which fails on new uncached contacts)
+        if (!contactId) {
+            console.warn(`⚠️ [Warning] WhatsApp could not resolve +${digits} in contacts. Attempting raw send...`);
+        }
         if (pdfBase64) {
             const media = new MessageMedia('application/pdf', pdfBase64, filename || 'Verified_Lab_Report.pdf');
             await client.sendMessage(targetJid, media, { caption: caption || message || '📑 Here is your official laboratory document.' });
